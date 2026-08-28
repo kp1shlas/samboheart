@@ -1,0 +1,183 @@
+{% extends "base.html" %}
+{% block title %}История платежей — Сердце Самбо{% endblock %}
+
+{% block content %}
+<div class="mb-6">
+    <a href="/dashboard/" class="text-sm text-accent hover:underline">
+        ← Назад в кабинет
+    </a>
+</div>
+
+<h1 class="text-2xl font-bold mb-6">💳 История платежей</h1>
+
+<!-- Статистика -->
+<div class="grid gap-4 sm:grid-cols-3 mb-6">
+    <div class="bg-white rounded-xl shadow-sm border p-5">
+        <p class="text-sm text-gray-600 mb-1">Всего оплачено</p>
+        <p class="text-2xl font-bold text-primary">
+            {{ total_paid|floatformat:0 }} ₽
+        </p>
+    </div>
+    <div class="bg-white rounded-xl shadow-sm border p-5">
+        <p class="text-sm text-gray-600 mb-1">Успешных платежей</p>
+        <p class="text-2xl font-bold text-gray-900">{{ total_count }}</p>
+    </div>
+    <div class="bg-white rounded-xl shadow-sm border p-5">
+        <p class="text-sm text-gray-600 mb-1">За выбранный период</p>
+        <p class="text-2xl font-bold text-gray-900">
+            {{ period_total|floatformat:0 }} ₽
+        </p>
+    </div>
+</div>
+
+<!-- Фильтры -->
+<div class="bg-white rounded-xl shadow-sm border p-5 mb-6">
+    <form method="get" class="grid gap-4 sm:grid-cols-3">
+        <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">
+                Статус
+            </label>
+            <select name="status"
+                    onchange="this.form.submit()"
+                    class="w-full px-3 py-2 border border-gray-300
+                           rounded-lg focus:ring-2 focus:ring-red-500
+                           focus:border-red-500 outline-none">
+                <option value="all" {% if current_status == 'all' %}selected{% endif %}>
+                    Все
+                </option>
+                <option value="paid" {% if current_status == 'paid' %}selected{% endif %}>
+                    ✅ Оплаченные
+                </option>
+                <option value="pending" {% if current_status == 'pending' %}selected{% endif %}>
+                    ⏳ Ожидают оплаты
+                </option>
+                <option value="failed" {% if current_status == 'failed' %}selected{% endif %}>
+                    ❌ Ошибки
+                </option>
+            </select>
+        </div>
+        
+        <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">
+                Период
+            </label>
+            <select name="period"
+                    onchange="this.form.submit()"
+                    class="w-full px-3 py-2 border border-gray-300
+                           rounded-lg focus:ring-2 focus:ring-red-500
+                           focus:border-red-500 outline-none">
+                <option value="all" {% if current_period == 'all' %}selected{% endif %}>
+                    За всё время
+                </option>
+                <option value="month" {% if current_period == 'month' %}selected{% endif %}>
+                    Текущий месяц
+                </option>
+                <option value="3months" {% if current_period == '3months' %}selected{% endif %}>
+                    Последние 3 месяца
+                </option>
+                <option value="year" {% if current_period == 'year' %}selected{% endif %}>
+                    Текущий год
+                </option>
+            </select>
+        </div>
+        
+        <div class="flex items-end">
+            <a href="/payments/history/"
+               class="w-full text-center bg-gray-100 hover:bg-gray-200
+                      text-gray-700 font-medium py-2 rounded-lg transition">
+                Сбросить фильтры
+            </a>
+        </div>
+    </form>
+</div>
+
+<!-- Список платежей -->
+{% if payments %}
+<div class="bg-white rounded-xl shadow-sm border overflow-hidden">
+    <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+            <thead>
+                <tr class="bg-gray-50 text-left text-gray-600">
+                    <th class="px-4 py-3 font-medium">Дата</th>
+                    <th class="px-4 py-3 font-medium">Ребёнок</th>
+                    <th class="px-4 py-3 font-medium">Описание</th>
+                    <th class="px-4 py-3 font-medium">Сумма</th>
+                    <th class="px-4 py-3 font-medium">Способ</th>
+                    <th class="px-4 py-3 font-medium">Статус</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100">
+                {% for payment in payments %}
+                <tr class="hover:bg-gray-50">
+                    <td class="px-4 py-3 whitespace-nowrap">
+                        {{ payment.created_at|date:"d.m.Y" }}
+                        <span class="text-xs text-gray-500">
+                            {{ payment.created_at|time:"H:i" }}
+                        </span>
+                    </td>
+                    <td class="px-4 py-3">
+                        {{ payment.child.full_name }}
+                    </td>
+                    <td class="px-4 py-3">
+                        {% if payment.event_registration %}
+                        🏆 {{ payment.event_registration.event.title }}
+                        {% elif payment.enrollment %}
+                        🥋 {{ payment.enrollment.group.name }}
+                        {% else %}
+                        {{ payment.note|default:"Оплата занятий" }}
+                        {% endif %}
+                    </td>
+                    <td class="px-4 py-3 font-semibold whitespace-nowrap">
+                        {{ payment.amount|floatformat:0 }} ₽
+                    </td>
+                    <td class="px-4 py-3">
+                        {% if payment.method == 'cash' %}
+                        💵 Наличные
+                        {% else %}
+                        💳 Онлайн
+                        {% endif %}
+                    </td>
+                    <td class="px-4 py-3">
+                        {% if payment.status == 'paid' %}
+                        <span class="px-2 py-1 bg-green-100 text-green-700
+                                     rounded-full text-xs">
+                            ✅ Оплачен
+                        </span>
+                        {% elif payment.status == 'pending' %}
+                        <span class="px-2 py-1 bg-yellow-100 text-yellow-700
+                                     rounded-full text-xs">
+                            ⏳ Ожидает
+                        </span>
+                        {% elif payment.status == 'failed' %}
+                        <span class="px-2 py-1 bg-red-100 text-red-700
+                                     rounded-full text-xs">
+                            ❌ Ошибка
+                        </span>
+                        {% elif payment.status == 'refunded' %}
+                        <span class="px-2 py-1 bg-gray-100 text-gray-700
+                                     rounded-full text-xs">
+                            ↩️ Возврат
+                        </span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% else %}
+<div class="bg-white rounded-xl shadow-sm border p-12 text-center">
+    <div class="text-6xl mb-4">📭</div>
+    <h2 class="text-xl font-bold text-gray-700 mb-2">Платежей пока нет</h2>
+    <p class="text-gray-500">
+        Как только вы совершите первый платёж, он появится здесь.
+    </p>
+    <a href="/dashboard/"
+       class="inline-block mt-6 bg-primary hover:bg-red-700
+              text-white font-medium py-2 px-6 rounded-lg transition">
+        Перейти к оплате →
+    </a>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+{% block title %}Кабинет владельца — Сердце Самбо{% endblock %}
+
+{% block content %}
+<div class="flex items-center justify-between mb-6">
+    <h1 class="text-2xl font-bold">👑 Кабинет владельца</h1>
+    <a href="/admin/" class="text-sm text-accent hover:underline">
+        → Админка Django
+    </a>
+</div>
+
+<!-- Метрики -->
+<div class="grid grid-cols-2 md:grid-cols-3 gap-4 mb-8">
+    <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+        <p class="text-gray-500 text-sm">Доход за текущий месяц</p>
+        <p class="text-2xl font-bold text-green-600">
+            {{ monthly_income|floatformat:0 }} ₽
+        </p>
+    </div>
+    <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+        <p class="text-gray-500 text-sm">Доход за прошлый месяц</p>
+        <p class="text-2xl font-bold text-blue-600">
+            {{ last_month_income|floatformat:0 }} ₽
+        </p>
+    </div>
+    <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+        <p class="text-gray-500 text-sm">Всего заработано</p>
+        <p class="text-2xl font-bold text-gray-900">
+            {{ all_time_income|floatformat:0 }} ₽
+        </p>
+    </div>
+    <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+        <p class="text-gray-500 text-sm">Всего детей</p>
+        <p class="text-2xl font-bold">{{ total_children }}</p>
+    </div>
+    <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+        <p class="text-gray-500 text-sm">На проверке справок</p>
+        <p class="text-2xl font-bold
+            {% if pending_certificates > 0 %}text-red-600{% endif %}">
+            {{ pending_certificates }}
+        </p>
+    </div>
+    <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+        <p class="text-gray-500 text-sm">Должников</p>
+        <p class="text-2xl font-bold
+            {% if debtors.count > 0 %}text-red-600{% endif %}">
+            {{ debtors.count }}
+        </p>
+    </div>
+</div>
+
+<!-- Действия -->
+<h2 class="text-lg font-semibold mb-3">Действия</h2>
+<div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
+    <a href="/owner/certificates/"
+       class="bg-white rounded-xl shadow-sm border border-gray-100
+              p-4 hover:shadow-md transition text-center">
+        <div class="text-3xl mb-2">📋</div>
+        <p class="font-semibold text-sm">Справки</p>
+        {% if pending_certificates %}
+        <span class="inline-block mt-1 px-2 py-0.5 bg-red-100
+                     text-red-700 rounded-full text-xs">
+            {{ pending_certificates }}
+        </span>
+        {% endif %}
+    </a>
+
+    <a href="/owner/cash-payment/"
+       class="bg-white rounded-xl shadow-sm border border-gray-100
+              p-4 hover:shadow-md transition text-center">
+        <div class="text-3xl mb-2">💵</div>
+        <p class="font-semibold text-sm">Наличная оплата</p>
+    </a>
+
+    <a href="/owner/groups/"
+       class="bg-white rounded-xl shadow-sm border border-gray-100
+              p-4 hover:shadow-md transition text-center">
+        <div class="text-3xl mb-2">👥</div>
+        <p class="font-semibold text-sm">Группы</p>
+    </a>
+
+    <a href="/owner/report/"
+       class="bg-white rounded-xl shadow-sm border border-gray-100
+              p-4 hover:shadow-md transition text-center">
+        <div class="text-3xl mb-2">📊</div>
+        <p class="font-semibold text-sm">Отчёт</p>
+    </a>
+</div>
+
+<!-- Последний платёж -->
+{% if last_payment %}
+<div class="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6">
+    <p class="text-sm text-blue-700 font-medium mb-1">
+        💳 Последний платёж
+    </p>
+    <p class="text-lg font-bold text-blue-900">
+        {{ last_payment.amount|floatformat:0 }} ₽
+        от {{ last_payment.parent.user.get_full_name|default:last_payment.parent.user.username }}
+    </p>
+    <p class="text-sm text-blue-600">
+        {{ last_payment.paid_at|date:"d.m.Y H:i" }} ·
+        {{ last_payment.get_method_display }}
+    </p>
+</div>
+{% endif %}
+
+<!-- Платежи за месяц -->
+<h2 class="text-lg font-semibold mb-3">Платежи за месяц</h2>
+{% if monthly_payments %}
+<div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+    <table class="w-full text-sm">
+        <thead>
+            <tr class="bg-gray-50 text-left text-gray-600">
+                <th class="px-4 py-3">Дата</th>
+                <th class="px-4 py-3">Родитель</th>
+                <th class="px-4 py-3">Ребёнок</th>
+                <th class="px-4 py-3">Способ</th>
+                <th class="px-4 py-3 text-right">Сумма</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+            {% for p in monthly_payments %}
+            <tr class="hover:bg-gray-50">
+                <td class="px-4 py-3">{{ p.paid_at|date:"d.m.Y" }}</td>
+                <td class="px-4 py-3">{{ p.parent }}</td>
+                <td class="px-4 py-3">{{ p.child.full_name }}</td>
+                <td class="px-4 py-3">{{ p.get_method_display }}</td>
+                <td class="px-4 py-3 text-right font-semibold text-green-600">
+                    {{ p.amount|floatformat:0 }} ₽
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<p class="text-gray-500">Платежей за текущий месяц пока нет.</p>
+{% endif %}
+
+<!-- Должники -->
+{% if debtors %}
+<div class="bg-red-50 border border-red-200 rounded-xl p-4 mb-6">
+    <h3 class="font-semibold text-red-800 mb-2">
+        ⚠️ Должники: {{ debtors.count }}
+    </h3>
+    <ul class="space-y-1 text-sm">
+        {% for e in debtors %}
+        <li>
+            <span class="font-medium">{{ e.child.full_name }}</span>
+            <span class="text-gray-500">— {{ e.group.name }}</span>
+        </li>
+        {% endfor %}
+    </ul>
+</div>
+{% endif %}
+{% endblock %}

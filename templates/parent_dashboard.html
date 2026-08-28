@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% block title %}Мой кабинет — Сердце Самбо{% endblock %}
+
+{% block content %}
+<h1 class="text-2xl font-bold mb-6">
+    👋 Здравствуйте, {{ user.first_name|default:user.username }}!
+</h1>
+
+{% if cancelled_notifications %}
+<div class="mb-6 bg-red-50 border border-red-200 rounded-xl p-4">
+    <h3 class="font-semibold text-red-800 mb-2">
+        🚫 Внимание: отменённые занятия
+    </h3>
+    <div class="space-y-1">
+        {% for lesson in cancelled_notifications %}
+        <p class="text-sm text-red-700">
+            <strong>{{ lesson.date|date:"d.m.Y" }}</strong>
+            — {{ lesson.group.name }}
+            {% if lesson.cancel_reason %}
+            ({{ lesson.cancel_reason }})
+            {% endif %}
+        </p>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+{% if children %}
+<div class="space-y-6">
+    {% for child in children %}
+    <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+        <div class="flex justify-between items-start mb-4">
+            <div>
+                <h2 class="text-xl font-bold">{{ child.full_name }}</h2>
+                {% if child.birth_date %}
+                <p class="text-sm text-gray-500">
+                    Дата рождения: {{ child.birth_date|date:"d.m.Y" }}
+                </p>
+                {% endif %}
+            </div>
+            <a href="{% url 'child_detail' child.id %}"
+               class="bg-primary hover:bg-red-700 text-white
+                      text-sm px-4 py-2 rounded-lg transition">
+                Подробнее →
+            </a>
+        </div>
+        
+        {% if child.enrollments.all %}
+        <div class="space-y-2">
+            {% for enrollment in child.enrollments.all %}
+            {% if enrollment.is_active %}
+            <div class="flex justify-between items-center
+                        bg-gray-50 rounded-lg p-3">
+                <div>
+                    <p class="font-medium">{{ enrollment.group.name }}</p>
+                    <p class="text-xs text-gray-500">
+                        Преподаватель: {{ enrollment.group.teacher|default:"не назначен" }}
+                    </p>
+                </div>
+                <div class="text-right">
+                    {% if enrollment.is_free %}
+                    <span class="px-3 py-1 bg-green-100 text-green-700 
+                                 rounded-full text-sm font-medium">
+                        🎁 Бесплатно
+                    </span>
+                    {% else %}
+                    <p class="text-sm text-gray-600">Осталось занятий:</p>
+                    <p class="text-lg font-bold
+                        {% if enrollment.remaining_lessons > 2 %}text-green-600
+                        {% elif enrollment.remaining_lessons > 0 %}text-yellow-600
+                        {% else %}text-red-600{% endif %}">
+                        {{ enrollment.remaining_lessons }}
+                    </p>
+                    {% endif %}
+                </div>
+            </div>
+            {% endif %}
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="text-gray-500 text-sm">
+            Ребёнок пока не записан ни в одну группу.
+        </p>
+        {% endif %}
+    </div>
+    {% endfor %}
+</div>
+
+<div class="mt-6 bg-blue-50 border border-blue-200 rounded-xl p-5">
+    <div class="flex items-center justify-between flex-wrap gap-4">
+        <div>
+            <h3 class="font-semibold text-blue-800 mb-1">
+                👶 Хотите записать ещё одного ребёнка?
+            </h3>
+            <p class="text-sm text-blue-700">
+                Напишите нам в VK, и мы поможем выбрать группу.
+            </p>
+        </div>
+        <a href="https://vk.com/write-238020416" target="_blank"
+           class="bg-primary hover:bg-red-700 text-white
+                  font-medium py-2 px-6 rounded-lg transition">
+            💬 Написать в VK
+        </a>
+    </div>
+</div>
+
+{% else %}
+<div class="bg-yellow-50 border border-yellow-200 rounded-xl p-8 text-center">
+    <div class="text-6xl mb-4">👶</div>
+    <h2 class="text-2xl font-bold text-yellow-800 mb-3">
+        У вас пока нет записанных детей
+    </h2>
+    <p class="text-yellow-700 mb-6 max-w-md mx-auto">
+        Чтобы записать ребёнка на секцию самбо, напишите нам в VK.
+        Мы поможем выбрать подходящую группу и ответим на все вопросы.
+    </p>
+    <a href="https://vk.com/write-238020416" target="_blank"
+       class="inline-block bg-primary hover:bg-red-700
+              text-white font-semibold py-3 px-8 rounded-xl transition">
+        💬 Записать ребёнка в VK
+    </a>
+</div>
+{% endif %}
+{% endblock %}

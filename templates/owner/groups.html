@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Группы — Сердце Самбо{% endblock %}
+
+{% block content %}
+<div class="mb-6">
+    <a href="/owner/" class="text-sm text-accent hover:underline">← Назад</a>
+</div>
+
+<div class="flex justify-between items-center mb-6">
+    <h1 class="text-2xl font-bold">👥 Группы</h1>
+    <a href="/owner/groups/add/"
+       class="bg-primary hover:bg-red-700 text-white
+              font-medium py-2 px-4 rounded-lg transition">
+        + Добавить группу
+    </a>
+</div>
+
+<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+    {% for group in groups %}
+    <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+        <div class="flex justify-between items-start mb-2">
+            <h3 class="font-bold text-lg">{{ group.name }}</h3>
+            {% if group.is_active %}
+                <span class="px-2 py-0.5 bg-green-100 text-green-800
+                             rounded-full text-xs">Активна</span>
+            {% else %}
+                <span class="px-2 py-0.5 bg-gray-100 text-gray-600
+                             rounded-full text-xs">Архив</span>
+            {% endif %}
+        </div>
+        <p class="text-sm text-gray-500">
+            Преподаватель: {{ group.teacher|default:"—" }}
+        </p>
+        <p class="text-sm text-gray-500">
+            Детей: {{ group.children_count }} / {{ group.max_capacity }}
+        </p>
+        <p class="text-lg font-bold text-primary mt-2">
+            {{ group.monthly_price|floatformat:0 }} ₽/мес
+        </p>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}

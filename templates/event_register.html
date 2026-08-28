@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}Регистрация на {{ event.title }} — Сердце Самбо{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto">
+    <div class="mb-6">
+        <a href="{% url 'event_detail' event.pk %}"
+           class="text-sm text-accent hover:underline">
+            ← Назад к событию
+        </a>
+    </div>
+
+    <div class="bg-white rounded-2xl shadow-lg p-8">
+        <div class="text-center mb-6">
+            <div class="text-5xl mb-3">📝</div>
+            <h1 class="text-2xl font-bold">Регистрация на мероприятие</h1>
+            <h2 class="text-lg text-gray-600 mt-2">{{ event.title }}</h2>
+        </div>
+
+        <div class="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6">
+            <div class="grid gap-2 text-sm">
+                <p><strong>📅 Дата:</strong> {{ event.date|date:"d.m.Y" }}
+                   {% if event.time %} в {{ event.time|time:"H:i" }}{% endif %}
+                </p>
+                <p><strong>📍 Место:</strong> {{ event.location }}</p>
+                {% if event.price > 0 %}
+                <p><strong>💰 Стоимость:</strong> {{ event.price|floatformat:0 }} ₽</p>
+                {% else %}
+                <p><strong>💰 Стоимость:</strong> Бесплатно</p>
+                {% endif %}
+                {% if event.spots_available is not None %}
+                <p><strong>👥 Свободно мест:</strong> {{ event.spots_available }}</p>
+                {% endif %}
+            </div>
+        </div>
+
+        {% if children %}
+        <form method="post" class="space-y-4">
+            {% csrf_token %}
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-2">
+                    Выберите ребёнка *
+                </label>
+                <div class="space-y-2">
+                    {% for child in children %}
+                    <label class="flex items-center p-3 border border-gray-300
+                                  rounded-xl hover:bg-gray-50 cursor-pointer">
+                        <input type="radio" name="child_id" value="{{ child.id }}"
+                               required
+                               class="mr-3 h-4 w-4 text-red-600
+                                      focus:ring-red-500">
+                        <div>
+                            <p class="font-medium">{{ child.full_name }}</p>
+                            {% if child.birth_date %}
+                            <p class="text-xs text-gray-500">
+                                {{ child.birth_date|date:"d.m.Y" }}
+                            </p>
+                            {% endif %}
+                        </div>
+                    </label>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <button type="submit"
+                    class="w-full bg-primary hover:bg-red-700
+                           text-white font-semibold py-3 rounded-xl transition">
+                Зарегистрировать
+            </button>
+        </form>
+        {% else %}
+        <div class="bg-yellow-50 border border-yellow-200 rounded-xl p-6 text-center">
+            <p class="text-yellow-700 mb-4">
+                У вас нет записанных детей.
+            </p>
+            <a href="https://vk.com/write-238020416" target="_blank"
+               class="inline-block bg-primary hover:bg-red-700
+                      text-white font-medium py-2 px-6 rounded-lg transition">
+                💬 Записать ребёнка в VK
+            </a>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

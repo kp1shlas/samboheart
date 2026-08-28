@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Добро пожаловать — Сердце Самбо{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto">
+    <div class="bg-white rounded-2xl shadow-lg p-8 text-center">
+        <div class="text-6xl mb-4">👋</div>
+        <h1 class="text-3xl font-bold mb-4">Добро пожаловать!</h1>
+        <p class="text-gray-600 mb-6">
+            Рады видеть вас в системе «Сердце Самбо».
+        </p>
+        
+        {% if user.child_profile %}
+        <!-- Для ребёнка -->
+        <div class="bg-blue-50 border border-blue-200 rounded-xl p-6 mb-6 text-left">
+            <h2 class="font-bold text-lg mb-3">📝 Как записаться в группу</h2>
+            <p class="text-gray-700 mb-3">
+                Чтобы записаться на занятия, напишите нам в VK:
+            </p>
+            <ol class="list-decimal list-inside space-y-2 text-gray-700">
+                <li>Нажмите кнопку «Написать в VK» ниже</li>
+                <li>В сообщении укажите, что хотите записаться на секцию</li>
+                <li>Мы поможем выбрать подходящую группу</li>
+                <li>После записи вы увидите расписание в своём кабинете</li>
+            </ol>
+        </div>
+        {% else %}
+        <!-- Для родителя -->
+        <div class="bg-blue-50 border border-blue-200 rounded-xl p-6 mb-6 text-left">
+            <h2 class="font-bold text-lg mb-3">📝 Как записать ребёнка на секцию</h2>
+            <p class="text-gray-700 mb-3">
+                Чтобы записать ребёнка на занятия, напишите нам в VK:
+            </p>
+            <ol class="list-decimal list-inside space-y-2 text-gray-700">
+                <li>Нажмите кнопку «Написать в VK» ниже</li>
+                <li>В сообщении укажите ФИО ребёнка и возраст</li>
+                <li>Мы свяжемся с вами и поможем выбрать группу</li>
+                <li>После записи ребёнок появится в вашем личном кабинете</li>
+            </ol>
+        </div>
+        {% endif %}
+        
+        <a href="https://vk.com/write-238020416" target="_blank"
+           class="inline-block bg-primary hover:bg-red-700
+                  text-white font-semibold py-3 px-8 rounded-xl transition">
+            💬 Написать в VK
+        </a>
+        
+        <p class="text-sm text-gray-500 mt-6">
+            ID сообщества: <code>sambo_heart</code>
+        </p>
+        
+        <div class="mt-8 pt-6 border-t border-gray-200">
+            <a href="/dashboard/" class="text-sm text-gray-600 hover:text-gray-800">
+                Перейти в личный кабинет →
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}Справки — Сердце Самбо{% endblock %}
+
+{% block content %}
+<div class="mb-6">
+    <a href="/owner/" class="text-sm text-accent hover:underline">
+        ← Назад
+    </a>
+</div>
+
+<h1 class="text-2xl font-bold mb-6">📋 Справки</h1>
+
+<div class="space-y-4">
+    {% for cert in certificates %}
+    <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+        <div class="flex justify-between items-start gap-4">
+            <div class="flex-1">
+                <div class="flex items-center gap-2 mb-2">
+                    <h3 class="font-bold">{{ cert.child.full_name }}</h3>
+                    {% if cert.status == 'pending' %}
+                        <span class="px-2 py-0.5 bg-yellow-100 text-yellow-800
+                                     rounded-full text-xs">На проверке</span>
+                    {% elif cert.status == 'approved' %}
+                        <span class="px-2 py-0.5 bg-green-100 text-green-800
+                                     rounded-full text-xs">Одобрена</span>
+                    {% else %}
+                        <span class="px-2 py-0.5 bg-red-100 text-red-800
+                                     rounded-full text-xs">Отклонена</span>
+                    {% endif %}
+                </div>
+
+                <p class="text-sm text-gray-600 mb-1">
+                    <strong>Родитель:</strong>
+                    {{ cert.child.parent.user.get_full_name|default:cert.child.parent.user.username }}
+                </p>
+                {% if cert.date_from and cert.date_to %}
+                <p class="text-sm text-gray-600 mb-1">
+                    <strong>Период:</strong>
+                    {{ cert.date_from|date:"d.m.Y" }} — {{ cert.date_to|date:"d.m.Y" }}
+                </p>
+                {% endif %}
+                {% if cert.reason %}
+                <p class="text-sm text-gray-600 mb-2">
+                    <strong>Причина:</strong> {{ cert.reason }}
+                </p>
+                {% endif %}
+                <p class="text-xs text-gray-400">
+                    Загружено: {{ cert.uploaded_at|date:"d.m.Y H:i" }}
+                </p>
+            </div>
+
+            <div class="flex flex-col gap-2">
+                <a href="{{ cert.file.url }}" target="_blank"
+                   class="text-sm text-accent hover:underline">
+                    Открыть файл
+                </a>
+
+                {% if cert.status == 'pending' %}
+                <form method="post" class="flex gap-2">
+                    {% csrf_token %}
+                    <input type="hidden" name="certificate_id" value="{{ cert.id }}">
+                    <button type="submit" name="action" value="approve"
+                            class="bg-green-600 hover:bg-green-700 text-white
+                                   text-sm px-3 py-1.5 rounded-lg transition">
+                        ✅ Одобрить
+                    </button>
+                    <button type="submit" name="action" value="reject"
+                            class="bg-red-600 hover:bg-red-700 text-white
+                                   text-sm px-3 py-1.5 rounded-lg transition">
+                        ❌ Отклонить
+                    </button>
+                </form>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    {% empty %}
+    <p class="text-gray-500">Справок пока нет.</p>
+    {% endfor %}
+</div>
+{% endblock %}

@@ -1,0 +1,352 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Сердце Самбо{% endblock %}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .line-clamp-3 {
+            display: -webkit-box;
+            -webkit-line-clamp: 3;
+            line-clamp: 3;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+
+        :root {
+            --primary: #DC2626;
+            --accent: #991B1B;
+        }
+
+        .bg-primary {
+            background-color: var(--primary);
+        }
+
+        .text-primary {
+            color: var(--primary);
+        }
+
+        .border-primary {
+            border-color: var(--primary);
+        }
+
+        .hover\:bg-red-700:hover {
+            background-color: var(--accent);
+        }
+
+        .hover\:text-red-700:hover {
+            color: var(--accent);
+        }
+
+        .text-accent {
+            color: var(--accent);
+        }
+
+        /* Sticky footer: футер всегда внизу */
+        html,
+        body {
+            height: 100%;
+        }
+
+        body {
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+
+        main {
+            flex: 1 0 auto;
+        }
+
+        footer {
+            flex-shrink: 0;
+        }
+    </style>
+</head>
+
+<body class="bg-gray-50">
+
+    <!-- ═══════════════════════════════════════════════════ -->
+    <!-- НАВБАР                                              -->
+    <!-- ═══════════════════════════════════════════════════ -->
+    <nav class="bg-primary shadow-md">
+        <div class="max-w-6xl mx-auto px-4">
+            <div class="flex items-center justify-between h-16">
+
+                <!-- Логотип -->
+                <a href="/" class="flex items-center gap-3">
+                    <img src="{% static 'images/logo.png' %}" alt="Сердце Самбо" class="h-10 w-auto"
+                        onerror="this.style.display='none'">
+                    <span class="text-white font-bold text-xl hidden sm:block">
+                        Сердце Самбо
+                    </span>
+                </a>
+
+                <!-- Кнопка бургер (только на мобильных) -->
+                <button id="menu-toggle" onclick="toggleMenu()" class="md:hidden text-white p-2 rounded-lg
+                           hover:bg-white/10 transition" aria-label="Открыть меню">
+                    <svg id="icon-burger" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M4 6h16M4 12h16M4 18h16" />
+                    </svg>
+                    <svg id="icon-close" class="w-6 h-6 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+
+                <!-- Десктопное меню -->
+                <div class="hidden md:flex items-center gap-1">
+                    <a href="/news/" class="text-white/90 hover:text-white hover:bg-white/10
+                          px-3 py-2 rounded-lg text-sm transition">
+                        Новости
+                    </a>
+                    <a href="/events/" class="text-white/90 hover:text-white hover:bg-white/10
+                          px-3 py-2 rounded-lg text-sm transition">
+                        События
+                    </a>
+
+                    {% if user.is_authenticated %}
+                    <div class="w-px h-6 bg-white/30 mx-2"></div>
+
+                    {% if user.is_superuser %}
+                    <a href="/owner/" class="text-white/90 hover:text-white hover:bg-white/10
+                              px-3 py-2 rounded-lg text-sm transition font-medium">
+                        👑 Владелец
+                    </a>
+                    {% endif %}
+
+                    {% if user.is_staff or user.is_superuser %}
+                    <a href="/admin/" class="text-white/90 hover:text-white hover:bg-white/10
+                              px-3 py-2 rounded-lg text-sm transition">
+                        ⚙️ Админка
+                    </a>
+                    {% endif %}
+                    {% if user.parent_profile %}
+                    <a href="/payments/history/" class="text-white/90 hover:text-white hover:bg-white/10
+              px-3 py-2 rounded-lg text-sm transition">
+                        💳 Платежи
+                    </a>
+                    {% endif %}
+
+                    <a href="/dashboard/" class="text-white/90 hover:text-white hover:bg-white/10
+                              px-3 py-2 rounded-lg text-sm transition">
+                        {% if user.child_profile %}
+                        🏠 Мой кабинет
+                        {% else %}
+                        Кабинет
+                        {% endif %}
+                    </a>
+
+                    <span class="text-white/70 text-sm mr-2">
+                        {% if user.child_profile %}
+                        {{ user.child_profile.full_name }}
+                        {% else %}
+                        {{ user.first_name|default:user.username }}
+                        {% endif %}
+                    </span>
+
+                    <a href="/logout/" class="text-white/80 hover:text-white
+                              border border-white/40 hover:bg-white/10
+                              px-3 py-1.5 rounded-lg text-sm transition">
+                        Выйти
+                    </a>
+                    {% else %}
+                    <div class="w-px h-6 bg-white/30 mx-2"></div>
+                    <a href="/login/" class="text-white/90 hover:text-white hover:bg-white/10
+                              px-3 py-2 rounded-lg text-sm transition">
+                        Войти
+                    </a>
+                    <a href="/register/" class="bg-white text-primary font-medium
+                              px-4 py-1.5 rounded-lg text-sm
+                              hover:bg-gray-100 transition">
+                        Регистрация
+                    </a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Мобильное меню -->
+        <div id="mobile-menu" class="hidden md:hidden bg-primary border-t border-white/20">
+            <div class="px-4 py-3 space-y-1">
+                <a href="/news/" class="block text-white/90 hover:text-white hover:bg-white/10
+                      px-3 py-2 rounded-lg text-sm transition">
+                    📰 Новости
+                </a>
+                <a href="/events/" class="block text-white/90 hover:text-white hover:bg-white/10
+                      px-3 py-2 rounded-lg text-sm transition">
+                    📅 События
+                </a>
+
+                {% if user.is_authenticated %}
+                <div class="border-t border-white/20 my-2"></div>
+
+                {% if user.is_superuser %}
+                <a href="/owner/" class="block text-white/90 hover:text-white hover:bg-white/10
+                          px-3 py-2 rounded-lg text-sm transition font-medium">
+                    👑 Кабинет владельца
+                </a>
+                {% endif %}
+
+                {% if user.is_staff or user.is_superuser %}
+                <a href="/admin/" class="block text-white/90 hover:text-white hover:bg-white/10
+                          px-3 py-2 rounded-lg text-sm transition">
+                    ⚙️ Админка
+                </a>
+                {% endif %}
+
+                <a href="/dashboard/" class="block text-white/90 hover:text-white hover:bg-white/10
+                          px-3 py-2 rounded-lg text-sm transition">
+                    🏠 Мой кабинет
+                </a>
+                {% if user.parent_profile %}
+                <a href="/payments/history/" class="block text-white/90 hover:text-white hover:bg-white/10
+          px-3 py-2 rounded-lg text-sm transition">
+                    💳 История платежей
+                </a>
+                {% endif %}
+                <div class="border-t border-white/20 my-2"></div>
+
+                <div class="px-3 py-2 text-white/70 text-sm">
+                    👤 {% if user.child_profile %}
+                    {{ user.child_profile.full_name }}
+                    {% else %}
+                    {{ user.first_name|default:user.username }}
+                    {% endif %}
+                </div>
+
+                <a href="/logout/" class="block text-white/90 hover:text-white hover:bg-white/10
+                          px-3 py-2 rounded-lg text-sm transition">
+                    🚪 Выйти
+                </a>
+                {% else %}
+                <div class="border-t border-white/20 my-2"></div>
+                <a href="/login/" class="block text-white/90 hover:text-white hover:bg-white/10
+                          px-3 py-2 rounded-lg text-sm transition">
+                    🔑 Войти
+                </a>
+                <a href="/register/" class="block bg-white text-primary font-medium
+                          px-3 py-2 rounded-lg text-sm
+                          hover:bg-gray-100 transition text-center">
+                    Регистрация
+                </a>
+                {% endif %}
+            </div>
+        </div>
+    </nav>
+
+    <!-- ═══════════════════════════════════════════════════ -->
+    <!-- СООБЩЕНИЯ                                           -->
+    <!-- ═══════════════════════════════════════════════════ -->
+    {% if messages %}
+    <div class="max-w-6xl mx-auto px-4 mt-4 w-full">
+        {% for message in messages %}
+        <div class="mb-2 px-4 py-3 rounded-lg text-sm message-auto-hide
+        {% if message.tags == 'success' %}bg-green-100 text-green-800
+        {% elif message.tags == 'error' %}bg-red-100 text-red-800
+        {% elif message.tags == 'warning' %}bg-yellow-100 text-yellow-800
+        {% else %}bg-blue-100 text-blue-800{% endif %}">
+            {{ message }}
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- ═══════════════════════════════════════════════════ -->
+    <!-- ОСНОВНОЙ КОНТЕНТ                                    -->
+    <!-- ═══════════════════════════════════════════════════ -->
+    <main class="max-w-6xl mx-auto px-4 py-8 w-full">
+        {% block content %}{% endblock %}
+    </main>
+
+    <!-- ═══════════════════════════════════════════════════ -->
+    <!-- ФУТЕР                                               -->
+    <!-- ═══════════════════════════════════════════════════ -->
+    <footer class="bg-gray-800 text-gray-300 mt-16 py-8">
+        <div class="max-w-6xl mx-auto px-4">
+            <div class="grid gap-8 md:grid-cols-3">
+                <div>
+                    <h3 class="text-white font-bold mb-3">Сердце Самбо</h3>
+                    <p class="text-sm text-gray-400">
+                        Детская секция самбо.
+                        Воспитываем чемпионов.
+                    </p>
+                </div>
+                <div>
+                    <h3 class="text-white font-bold mb-3">Навигация</h3>
+                    <ul class="space-y-2 text-sm">
+                        <li><a href="/" class="hover:text-white">Главная</a></li>
+                        <li><a href="/news/" class="hover:text-white">Новости</a></li>
+                        <li><a href="/events/" class="hover:text-white">События</a></li>
+                        <li><a href="/login/" class="hover:text-white">Вход</a></li>
+                    </ul>
+                </div>
+                <div>
+                    <h3 class="text-white font-bold mb-3">Контакты</h3>
+                    <ul class="space-y-2 text-sm">
+                        <li>
+                            <a href="tel:+79827964767" class="hover:text-white">
+                                📞 +7 (982) 796-47-67
+                            </a>
+                        </li>
+                        <li>
+                            <a href="mailto:samooborona17izh@gmail.com" class="hover:text-white">
+                                📧 samooborona17izh@gmail.com
+                            </a>
+                        </li>
+                        <li>📍 г. Ижевск, МБОУ СОШ №17,<br>ул. Леваневского, 102</li>
+                        <li>
+                            <a href="https://vk.com/sambo_heart" target="_blank" class="hover:text-white">
+                                💬 ВКонтакте
+                            </a>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+            <div class="mt-8 pt-6 border-t border-gray-700 text-center text-sm text-gray-500">
+                <p>© 2026 Сердце Самбо. Все права защищены.</p>
+            </div>
+        </div>
+    </footer>
+
+    <!-- ═══════════════════════════════════════════════════ -->
+    <!-- СКРИПТЫ                                             -->
+    <!-- ═══════════════════════════════════════════════════ -->
+    <script>
+        function toggleMenu() {
+            var menu = document.getElementById('mobile-menu');
+            var iconBurger = document.getElementById('icon-burger');
+            var iconClose = document.getElementById('icon-close');
+
+            menu.classList.toggle('hidden');
+            iconBurger.classList.toggle('hidden');
+            iconClose.classList.toggle('hidden');
+        }
+
+        document.querySelectorAll('#mobile-menu a').forEach(function (link) {
+            link.addEventListener('click', function () {
+                document.getElementById('mobile-menu').classList.add('hidden');
+                document.getElementById('icon-burger').classList.remove('hidden');
+                document.getElementById('icon-close').classList.add('hidden');
+            });
+        });
+
+        document.addEventListener('DOMContentLoaded', function () {
+            var messages = document.querySelectorAll('.message-auto-hide');
+            messages.forEach(function (msg) {
+                setTimeout(function () {
+                    msg.style.transition = 'opacity 0.5s';
+                    msg.style.opacity = '0';
+                    setTimeout(function () {msg.remove();}, 500);
+                }, 5000);
+            });
+        });
+    </script>
+
+</body>
+
+</html>

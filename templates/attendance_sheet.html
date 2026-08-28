@@ -1,0 +1,188 @@
+{% extends "base.html" %}
+{% load custom_filters %}
+{% block title %}Посещаемость — {{ lesson.date|date:"d.m.Y" }}{% endblock %}
+
+{% block content %}
+<div class="mb-6">
+    <a href="/teacher/group/{{ group.id }}/lessons/"
+       class="text-sm text-accent hover:underline">
+        ← К списку занятий
+    </a>
+</div>
+
+<h1 class="text-2xl font-bold mb-2">{{ group.name }}</h1>
+
+<div class="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6">
+    <p class="text-blue-800">
+        📅 Занятие: <strong>{{ lesson.date|date:"d.m.Y" }}</strong>
+        в {{ lesson.start_time|time:"H:i" }}
+    </p>
+</div>
+
+<form method="post">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="save_attendance">
+
+    <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+        <table class="w-full text-sm">
+            <thead>
+                <tr class="bg-gray-50 text-left text-gray-600">
+                    <th class="px-4 py-3 font-medium">Ребёнок</th>
+                    <th class="px-4 py-3 font-medium">Остаток</th>
+                    <th class="px-4 py-3 font-medium">Статус</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100">
+                {% for child in children %}
+                <tr class="hover:bg-gray-50">
+                    <td class="px-4 py-3 font-medium">
+                        {{ child.full_name }}
+                    </td>
+                    <td class="px-4 py-3">
+                        <span class="font-bold
+                            {% if child.remaining_lessons > 2 %}text-green-600
+                            {% elif child.remaining_lessons > 0 %}text-yellow-600
+                            {% else %}text-red-600{% endif %}">
+                            {{ child.remaining_lessons }}
+                        </span>
+                    </td>
+                    <td class="px-4 py-3">
+                        <div class="flex gap-3">
+                            {% with current=existing|default_if_none:"" %}
+                            <label class="flex items-center gap-1.5 cursor-pointer">
+                                <input type="radio"
+                                       name="status_{{ child.id }}"
+                                       value="present"
+                                       {% if existing|get_item:child.id == 'present' or child.id not in existing %}checked{% endif %}
+                                       class="w-4 h-4 accent-green-600">
+                                <span class="text-sm">Был</span>
+                            </label>
+                            <label class="flex items-center gap-1.5 cursor-pointer">
+                                <input type="radio"
+                                       name="status_{{ child.id }}"
+                                       value="absent"
+                                       {% if existing|get_item:child.id == 'absent' %}checked{% endif %}
+                                       class="w-4 h-4 accent-red-600">
+                                <span class="text-sm">Не был</span>
+                            </label>
+                            {% endwith %}
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="flex gap-3 mt-6">
+        <button type="submit"
+                class="bg-primary hover:bg-red-700
+                       text-white font-medium py-2.5 px-6
+                       rounded-xl transition">
+            ✅ Сохранить посещаемость
+        </button>
+    </div>
+</form>
+
+<!-- Блок отмены занятия -->
+{% if not lesson.is_cancelled %}
+<div class="mt-8 bg-yellow-50 border border-yellow-200 rounded-xl p-5">
+    <h3 class="font-semibold text-yellow-800 mb-3">
+        ⚠️ Отменить занятие
+    </h3>
+    <form method="post">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="cancel_lesson">
+
+        <div class="mb-3">
+            <label class="block text-sm font-medium text-gray-700 mb-1">
+                Причина отмены *
+            </label>
+            <select name="cancel_reason_select" id="cancel-reason-select"
+                    onchange="toggleCustomReason()"
+                    class="w-full px-4 py-2.5 border border-gray-300
+                           rounded-xl focus:ring-2 focus:ring-yellow-500
+                           focus:border-yellow-500 outline-none">
+                <option value="Преподаватель заболел">
+                    Преподаватель заболел
+                </option>
+                <option value="Праздничный день">
+                    Праздничный день
+                </option>
+                <option value="Технические причины">
+                    Технические причины
+                </option>
+                <option value="Личные обстоятельства преподавателя">
+                    Личные обстоятельства преподавателя
+                </option>
+                <option value="custom">Другая причина...</option>
+            </select>
+        </div>
+
+        <div id="custom-reason-block" class="mb-3 hidden">
+            <input type="text" name="cancel_reason_custom"
+                   id="cancel-reason-custom"
+                   class="w-full px-4 py-2.5 border border-gray-300
+                          rounded-xl focus:ring-2 focus:ring-yellow-500
+                          focus:border-yellow-500 outline-none"
+                   placeholder="Введите причину">
+        </div>
+
+        <!-- Скрытое поле с финальной причиной -->
+        <input type="hidden" name="cancel_reason" id="cancel-reason-final">
+
+        <button type="submit"
+                onclick="setCancelReason(); return confirm('Отменить занятие?');"
+                class="bg-yellow-600 hover:bg-yellow-700
+                       text-white font-medium py-2 px-4
+                       rounded-lg transition text-sm">
+            Отменить занятие
+        </button>
+    </form>
+</div>
+{% else %}
+<!-- Занятие уже отменено -->
+<div class="mt-8 bg-gray-50 border border-gray-200 rounded-xl p-5">
+    <h3 class="font-semibold text-gray-700 mb-2">
+        🚫 Занятие отменено
+    </h3>
+    <p class="text-sm text-gray-600 mb-3">
+        Причина: <strong>{{ lesson.cancel_reason }}</strong>
+    </p>
+    <form method="post">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="restore_lesson">
+        <button type="submit"
+                class="bg-gray-600 hover:bg-gray-700
+                       text-white font-medium py-2 px-4
+                       rounded-lg transition text-sm">
+            Восстановить занятие
+        </button>
+    </form>
+</div>
+{% endif %}
+
+<script>
+function toggleCustomReason() {
+    var select = document.getElementById('cancel-reason-select');
+    var customBlock = document.getElementById('custom-reason-block');
+    if (select.value === 'custom') {
+        customBlock.classList.remove('hidden');
+    } else {
+        customBlock.classList.add('hidden');
+    }
+}
+
+function setCancelReason() {
+    var select = document.getElementById('cancel-reason-select');
+    var customInput = document.getElementById('cancel-reason-custom');
+    var finalInput = document.getElementById('cancel-reason-final');
+
+    if (select.value === 'custom') {
+        finalInput.value = customInput.value;
+    } else {
+        finalInput.value = select.value;
+    }
+}
+</script>
+{% endblock %}

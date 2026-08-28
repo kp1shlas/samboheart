@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Кабинет преподавателя — Сердце Самбо{% endblock %}
+
+{% block content %}
+<h1 class="text-2xl font-bold mb-6">
+    🥋 Кабинет преподавателя
+</h1>
+
+<!-- Группы преподавателя -->
+<h2 class="text-lg font-semibold mb-4 text-gray-700">Мои группы</h2>
+
+{% if groups %}
+<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+    {% for group in groups %}
+    <div class="card bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+        <h3 class="font-bold text-lg mb-1">{{ group.name }}</h3>
+        <p class="text-sm text-gray-500 mb-3">
+            {{ group.children.count }} детей
+        </p>
+        <a href="/teacher/group/{{ group.id }}/lessons/" class="block text-center bg-primary hover:bg-red-700
+                  text-white text-sm py-2 px-3 rounded-lg transition">
+            Занятия и посещаемость
+        </a>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="bg-white rounded-xl p-6 text-center text-gray-500">
+    У вас пока нет групп. Обратитесь к администратору.
+</div>
+{% endif %}
+
+<!-- Последние новости -->
+<h2 class="text-lg font-semibold mb-4 mt-8 text-gray-700">
+    Последние новости
+</h2>
+{% if news %}
+<div class="space-y-3">
+    {% for item in news %}
+    <a href="/news/{{ item.id }}/"
+       class="block bg-white rounded-xl shadow-sm border border-gray-100
+              p-4 hover:shadow-md transition">
+        <h3 class="font-semibold">{{ item.title }}</h3>
+        <p class="text-sm text-gray-500 mt-1">
+            {{ item.published_at|date:"d.m.Y" }}
+        </p>
+    </a>
+    {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

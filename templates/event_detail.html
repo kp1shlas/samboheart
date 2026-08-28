@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+{% block title %}{{ event.title }} — Сердце Самбо{% endblock %}
+
+{% block content %}
+<div class="mb-6">
+    <a href="/events/" class="text-sm text-accent hover:underline">
+        ← Назад к событиям
+    </a>
+</div>
+
+<div class="bg-white rounded-2xl shadow-lg overflow-hidden">
+    {% if event.image %}
+    <img src="{{ event.image.url }}" alt="{{ event.title }}" class="w-full h-64 object-cover">
+    {% endif %}
+
+    <div class="p-8">
+        <h1 class="text-3xl font-bold mb-4">{{ event.title }}</h1>
+
+        <!-- Информация о событии -->
+        <div class="grid gap-4 mb-6 bg-gray-50 rounded-xl p-4">
+            <div class="grid sm:grid-cols-2 gap-3 text-sm">
+                <div>
+                    <p class="text-gray-600">📅 Дата</p>
+                    <p class="font-semibold">{{ event.date|date:"d.m.Y" }}</p>
+                </div>
+                {% if event.time %}
+                <div>
+                    <p class="text-gray-600">🕐 Время</p>
+                    <p class="font-semibold">{{ event.time|time:"H:i" }}</p>
+                </div>
+                {% endif %}
+                {% if event.location %}
+                <div class="sm:col-span-2">
+                    <p class="text-gray-600">📍 Место</p>
+                    <p class="font-semibold">{{ event.location }}</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Описание -->
+        {% if event.description %}
+        <div class="mb-6">
+            <h2 class="text-lg font-bold mb-3">Описание</h2>
+            <div class="text-gray-700 leading-relaxed">
+                {{ event.description|linebreaks }}
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Блок регистрации -->
+        {% if event.is_registration_required %}
+        <div class="border-t border-gray-200 pt-6">
+            <h2 class="text-xl font-bold mb-4">📝 Регистрация</h2>
+
+            <div class="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-4">
+                <div class="grid gap-2 text-sm">
+                    {% if event.price > 0 %}
+                    <p><strong>💰 Стоимость:</strong> {{ event.price|floatformat:0 }} ₽</p>
+                    {% else %}
+                    <p><strong>💰 Стоимость:</strong> Бесплатно</p>
+                    {% endif %}
+
+                    {% if event.spots_available is not None %}
+                    <p><strong>👥 Свободно мест:</strong> {{ event.spots_available }}
+                        {% if event.max_participants %} из {{ event.max_participants }}{% endif %}
+                    </p>
+                    {% endif %}
+
+                    {% if event.registration_deadline %}
+                    <p><strong>⏰ Дедлайн регистрации:</strong> {{ event.registration_deadline|date:"d.m.Y H:i" }}</p>
+                    {% endif %}
+                </div>
+            </div>
+
+            {% if user.is_authenticated %}
+            {% if event.is_registration_open %}
+            {% if event.spots_available is None or event.spots_available > 0 %}
+            <a href="{% url 'event_register' event.id %}" class="inline-block bg-primary hover:bg-red-700
+                              text-white font-semibold py-3 px-6 rounded-xl transition">
+                Зарегистрировать ребёнка
+            </a>
+            {% else %}
+            <div class="bg-red-50 border border-red-200 rounded-xl p-4">
+                <p class="text-red-700">
+                    ❌ К сожалению, все места заняты.
+                </p>
+            </div>
+            {% endif %}
+            {% else %}
+            <div class="bg-yellow-50 border border-yellow-200 rounded-xl p-4">
+                <p class="text-yellow-700">
+                    ⏰ Регистрация на это событие закрыта.
+                </p>
+            </div>
+            {% endif %}
+            {% else %}
+            <div class="bg-gray-50 border border-gray-200 rounded-xl p-4">
+                <p class="text-gray-700 mb-3">
+                    Чтобы зарегистрировать ребёнка, войдите в систему.
+                </p>
+                <a href="/login/" class="inline-block bg-gray-800 hover:bg-gray-900
+                          text-white font-medium py-2 px-6 rounded-lg transition">
+                    Войти
+                </a>
+            </div>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        <!-- Мои регистрации на это событие -->
+        {% if user.is_authenticated and user.parent_profile %}
+        {% with my_registrations=event.registrations.all %}
+        {% if my_registrations %}
+        <div class="border-t border-gray-200 pt-6 mt-6">
+            <h2 class="text-lg font-bold mb-3">✅ Ваши регистрации на это событие</h2>
+            <div class="space-y-2">
+                {% for reg in my_registrations %}
+                {% if reg.parent == user.parent_profile and reg.status != 'cancelled' %}
+                <div class="flex justify-between items-center flex-wrap gap-3
+                    bg-green-50 border border-green-200
+                    rounded-lg p-4">
+                    <div class="flex-1">
+                        <p class="font-medium">{{ reg.child.full_name }}</p>
+                        <p class="text-xs text-gray-600 mb-2">
+                            Зарегистрирован: {{ reg.registered_at|date:"d.m.Y H:i" }}
+                        </p>
+
+                        {% if reg.status == 'registered' %}
+                        <span class="px-2 py-0.5 bg-yellow-100 text-yellow-700 rounded-full text-xs">
+                            ⏳ Ожидает оплаты
+                        </span>
+                        {% elif reg.status == 'paid' %}
+                        <span class="px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-xs">
+                            ✅ Оплачено
+                        </span>
+                        {% elif reg.status == 'attended' %}
+                        <span class="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs">
+                            🏆 Посетил
+                        </span>
+                        {% endif %}
+                    </div>
+
+                    <div class="flex items-center gap-2">
+                        {% if reg.status == 'registered' and event.price > 0 %}
+                        <!-- Кнопка оплаты -->
+                        <a href="{% url 'event_pay' reg.id %}" class="bg-primary hover:bg-red-700 text-white
+                          text-sm font-medium py-2 px-4 rounded-lg transition">
+                            💳 Оплатить {{ event.price|floatformat:0 }} ₽
+                        </a>
+                        {% endif %}
+
+                        <!-- Кнопка отмены -->
+                        <a href="{% url 'event_cancel_registration' reg.id %}"
+                            onclick="return confirm('Отменить регистрацию?')" class="text-red-600 hover:text-red-800 text-sm
+                          border border-red-300 hover:bg-red-50
+                          py-2 px-4 rounded-lg transition">
+                            Отменить
+                        </a>
+                    </div>
+                </div>
+                {% endif %}
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+        {% endwith %}
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

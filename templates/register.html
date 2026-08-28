@@ -1,0 +1,194 @@
+{% extends "base.html" %}
+{% block title %}Регистрация — Сердце Самбо{% endblock %}
+
+{% block content %}
+<div class="max-w-md mx-auto">
+    <div class="bg-white rounded-2xl shadow-lg p-8">
+        <div class="text-center mb-6">
+            <div class="text-5xl mb-3">✨</div>
+            <h1 class="text-2xl font-bold">Регистрация</h1>
+            <p class="text-gray-600 text-sm mt-2">
+                Выберите тип аккаунта
+            </p>
+        </div>
+
+        <!-- Переключатель ролей -->
+        <div class="grid grid-cols-2 gap-2 mb-6 bg-gray-100 p-1 rounded-xl">
+            <button type="button" id="role-parent-btn"
+                    onclick="switchRole('parent')"
+                    class="py-2.5 px-3 rounded-lg text-sm font-medium
+                           transition bg-white shadow text-primary">
+                👨‍👩‍👧 Родитель
+            </button>
+            <button type="button" id="role-child-btn"
+                    onclick="switchRole('child')"
+                    class="py-2.5 px-3 rounded-lg text-sm font-medium
+                           transition text-gray-600">
+                👦 Ребёнок
+            </button>
+        </div>
+
+        <form method="post" class="space-y-4" id="register-form">
+            {% csrf_token %}
+            <input type="hidden" name="role" id="role-input" value="{{ role|default:'parent' }}">
+
+            <!-- Поля родителя -->
+            <div id="parent-fields">
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">
+                        Имя *
+                    </label>
+                    <input type="text" name="first_name"
+                           placeholder="Мария"
+                           class="w-full px-4 py-2.5 border border-gray-300
+                                  rounded-xl focus:ring-2 focus:ring-red-500
+                                  focus:border-red-500 outline-none">
+                </div>
+
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">
+                        Фамилия *
+                    </label>
+                    <input type="text" name="last_name"
+                           placeholder="Сидорова"
+                           class="w-full px-4 py-2.5 border border-gray-300
+                                  rounded-xl focus:ring-2 focus:ring-red-500
+                                  focus:border-red-500 outline-none">
+                </div>
+            </div>
+
+            <!-- Поля ребёнка -->
+            <div id="child-fields" class="hidden">
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">
+                        ФИО *
+                    </label>
+                    <input type="text" name="full_name"
+                           placeholder="Иванов Иван Иванович"
+                           class="w-full px-4 py-2.5 border border-gray-300
+                                  rounded-xl focus:ring-2 focus:ring-red-500
+                                  focus:border-red-500 outline-none">
+                </div>
+
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">
+                        Дата рождения
+                    </label>
+                    <input type="date" name="birth_date"
+                           class="w-full px-4 py-2.5 border border-gray-300
+                                  rounded-xl focus:ring-2 focus:ring-red-500
+                                  focus:border-red-500 outline-none">
+                </div>
+            </div>
+
+            <!-- Общие поля -->
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">
+                    Логин *
+                </label>
+                <input type="text" name="username" required
+                       placeholder="Ваш логин"
+                       class="w-full px-4 py-2.5 border border-gray-300
+                              rounded-xl focus:ring-2 focus:ring-red-500
+                              focus:border-red-500 outline-none">
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">
+                    Email
+                </label>
+                <input type="email" name="email"
+                       placeholder="email@example.com"
+                       class="w-full px-4 py-2.5 border border-gray-300
+                              rounded-xl focus:ring-2 focus:ring-red-500
+                              focus:border-red-500 outline-none">
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">
+                    Пароль *
+                </label>
+                <input type="password" name="password" required minlength="5"
+                       class="w-full px-4 py-2.5 border border-gray-300
+                              rounded-xl focus:ring-2 focus:ring-red-500
+                              focus:border-red-500 outline-none">
+                <p class="text-xs text-gray-500 mt-1">Минимум 5 символов</p>
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">
+                    Повторите пароль *
+                </label>
+                <input type="password" name="password2" required minlength="5"
+                       class="w-full px-4 py-2.5 border border-gray-300
+                              rounded-xl focus:ring-2 focus:ring-red-500
+                              focus:border-red-500 outline-none">
+            </div>
+
+            <button type="submit"
+                    class="w-full bg-primary hover:bg-red-700
+                           text-white font-semibold py-3 rounded-xl transition">
+                Зарегистрироваться
+            </button>
+        </form>
+
+        <div class="mt-6 pt-6 border-t border-gray-200 text-center">
+            <p class="text-sm text-gray-600 mb-2">Уже есть аккаунт?</p>
+            <a href="/login/" class="text-primary hover:text-red-700 font-medium">
+                Войти
+            </a>
+        </div>
+    </div>
+</div>
+
+<script>
+function switchRole(role) {
+    var parentFields = document.getElementById('parent-fields');
+    var childFields = document.getElementById('child-fields');
+    var parentBtn = document.getElementById('role-parent-btn');
+    var childBtn = document.getElementById('role-child-btn');
+    var roleInput = document.getElementById('role-input');
+
+    roleInput.value = role;
+
+    if (role === 'parent') {
+        parentFields.classList.remove('hidden');
+        childFields.classList.add('hidden');
+        parentBtn.classList.add('bg-white', 'shadow', 'text-primary');
+        parentBtn.classList.remove('text-gray-600');
+        childBtn.classList.remove('bg-white', 'shadow', 'text-primary');
+        childBtn.classList.add('text-gray-600');
+
+        // Required для полей родителя
+        parentFields.querySelectorAll('input').forEach(function(inp) {
+            if (inp.name === 'first_name' || inp.name === 'last_name') {
+                inp.required = true;
+            }
+        });
+        childFields.querySelectorAll('input').forEach(function(inp) {
+            inp.required = false;
+        });
+    } else {
+        parentFields.classList.add('hidden');
+        childFields.classList.remove('hidden');
+        childBtn.classList.add('bg-white', 'shadow', 'text-primary');
+        childBtn.classList.remove('text-gray-600');
+        parentBtn.classList.remove('bg-white', 'shadow', 'text-primary');
+        parentBtn.classList.add('text-gray-600');
+
+        childFields.querySelectorAll('input').forEach(function(inp) {
+            if (inp.name === 'full_name') inp.required = true;
+        });
+        parentFields.querySelectorAll('input').forEach(function(inp) {
+            inp.required = false;
+        });
+    }
+}
+
+// Инициализация при загрузке
+document.addEventListener('DOMContentLoaded', function() {
+    var initialRole = '{{ role|default:"parent" }}';
+    switchRole(initialRole);
+});
+</script>
+{% endblock %}

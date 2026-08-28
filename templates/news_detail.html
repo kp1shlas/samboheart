@@ -1,0 +1,29 @@
+<!-- templates/news_detail.html -->
+{% extends "base.html" %}
+{% block title %}{{ news.title }} — Сердце Самбо{% endblock %}
+
+{% block content %}
+<div class="mb-6">
+    <a href="/news/" class="text-sm text-accent hover:underline">
+        ← Все новости
+    </a>
+</div>
+
+<article class="bg-white rounded-xl shadow-sm border border-gray-100 p-6 max-w-3xl">
+    <h1 class="text-2xl font-bold mb-2">{{ news.title }}</h1>
+    <p class="text-sm text-gray-400 mb-4">
+        {{ news.published_at|date:"d.m.Y H:i" }}
+        {% if news.author %}— {{ news.author.get_full_name }}{% endif %}
+    </p>
+
+    {% if news.image %}
+    <img src="{{ news.image.url }}"
+         alt="{{ news.title }}"
+         class="w-full rounded-lg mb-4">
+    {% endif %}
+
+    <div class="prose max-w-none text-gray-700 leading-relaxed">
+        {{ news.content|linebreaks }}
+    </div>
+</article>
+{% endblock %}

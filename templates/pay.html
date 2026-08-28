@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}Оплата — Сердце Самбо{% endblock %}
+
+{% block content %}
+<h1 class="text-2xl font-bold mb-6">💳 Оплата занятий</h1>
+
+{% if children_with_tariffs %}
+<div class="space-y-6">
+    {% for item in children_with_tariffs %}
+    <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+        <div class="mb-4">
+            <h2 class="font-bold text-lg">{{ item.child.full_name }}</h2>
+            <p class="text-sm text-gray-500">
+                {{ item.child.group.name|default:"Группа не назначена" }}
+                · Осталось занятий:
+                <span class="font-bold
+                    {% if item.child.remaining_lessons > 2 %}text-green-600
+                    {% elif item.child.remaining_lessons > 0 %}text-yellow-600
+                    {% else %}text-red-600{% endif %}">
+                    {{ item.child.remaining_lessons }}
+                </span>
+            </p>
+        </div>
+
+        {% if item.tariffs %}
+        <form method="post" action="/pay/create/">
+            {% csrf_token %}
+            <input type="hidden" name="child_id" value="{{ item.child.id }}">
+
+            <div class="grid gap-3 sm:grid-cols-2">
+                {% for tariff in item.tariffs %}
+                <label class="border-2 border-gray-200 rounded-xl p-4
+                              cursor-pointer hover:border-red-500
+                              transition text-center tariff-card">
+                    <input type="radio" name="tariff" value="{{ tariff.code }}"
+                           class="sr-only" required
+                           {% if forloop.first %}checked{% endif %}>
+                    <p class="font-semibold text-gray-900 mb-1">
+                        {{ tariff.name }}
+                    </p>
+                    <p class="text-sm text-gray-500 mb-2">
+                        {{ tariff.lessons }} зан.
+                    </p>
+                    <p class="text-2xl font-bold text-primary">
+                        {{ tariff.price|floatformat:0 }} ₽
+                    </p>
+                </label>
+                {% endfor %}
+            </div>
+
+            <button type="submit"
+                    class="mt-4 w-full bg-primary hover:bg-red-700
+                           text-white font-medium py-3 px-4
+                           rounded-xl transition">
+                Перейти к оплате
+            </button>
+        </form>
+        {% else %}
+        <p class="text-gray-500 text-sm">
+            Тарифы не назначены. Обратитесь к администратору.
+        </p>
+        {% endif %}
+    </div>
+    {% endfor %}
+</div>
+
+<div class="mt-6 bg-blue-50 border border-blue-200 rounded-xl p-4">
+    <p class="text-sm text-blue-800">
+        💡 Также вы можете оплатить наличными в секции.
+        Администратор зачислит занятия на счёт ребёнка.
+    </p>
+</div>
+
+<style>
+    .tariff-card:has(input:checked) {
+        border-color: #DC2626;
+        background-color: #FEF2F2;
+    }
+</style>
+{% else %}
+<div class="bg-white rounded-xl p-6 text-center text-gray-500">
+    У вас пока нет детей в системе. Обратитесь к администратору.
+</div>
+{% endif %}
+{% endblock %}

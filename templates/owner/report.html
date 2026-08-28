@@ -1,0 +1,192 @@
+{% extends "base.html" %}
+{% block title %}Отчёт — Сердце Самбо{% endblock %}
+
+{% block content %}
+<div class="mb-6">
+    <a href="/owner/" class="text-sm text-accent hover:underline">← Назад</a>
+</div>
+
+<h1 class="text-2xl font-bold mb-6">📊 Финансовый отчёт</h1>
+
+<!-- Три главных показателя -->
+<div class="grid gap-4 md:grid-cols-3 mb-8">
+
+    <!-- Текущий месяц -->
+    <div class="bg-gradient-to-br from-red-600 to-red-700 rounded-2xl p-6 text-white">
+        <p class="text-white/80 text-sm mb-1">
+            Текущий месяц ({{ month_start|date:"F"|lower }})
+        </p>
+        <p class="text-3xl font-bold mb-3">
+            {{ monthly_total|floatformat:0 }} ₽
+        </p>
+        <div class="text-sm space-y-1">
+            <p>Платежей: {{ monthly_count }}</p>
+            <p>💵 Наличные: {{ monthly_cash_total|floatformat:0 }} ₽</p>
+            <p>💳 Онлайн: {{ monthly_online_total|floatformat:0 }} ₽</p>
+        </div>
+    </div>
+
+    <!-- Прошлый месяц -->
+    <div class="bg-gradient-to-br from-blue-600 to-blue-700 rounded-2xl p-6 text-white">
+        <p class="text-white/80 text-sm mb-1">
+            Прошлый месяц ({{ last_month_start|date:"F"|lower }})
+        </p>
+        <p class="text-3xl font-bold mb-3">
+            {{ last_month_total|floatformat:0 }} ₽
+        </p>
+        <div class="text-sm space-y-1">
+            <p>Платежей: {{ last_month_count }}</p>
+        </div>
+    </div>
+
+    <!-- Всего за всё время -->
+    <div class="bg-gradient-to-br from-gray-800 to-gray-900 rounded-2xl p-6 text-white">
+        <p class="text-white/80 text-sm mb-1">Всего заработано</p>
+        <p class="text-3xl font-bold mb-3">
+            {{ all_time_total|floatformat:0 }} ₽
+        </p>
+        <div class="text-sm space-y-1">
+            <p>Платежей за всё время: {{ all_time_count }}</p>
+        </div>
+    </div>
+</div>
+
+<!-- Разбивка по месяцам (кликабельная) -->
+<div class="bg-white rounded-xl shadow-sm border border-gray-100 mb-8">
+    <details class="group">
+        <summary class="cursor-pointer px-6 py-4 flex items-center
+                        justify-between hover:bg-gray-50 transition">
+            <h2 class="text-lg font-semibold">
+                📅 Доход по месяцам
+            </h2>
+            <span class="text-gray-400 group-open:rotate-180 transition-transform">
+                ▼
+            </span>
+        </summary>
+
+        <div class="border-t border-gray-100">
+            {% if monthly_breakdown %}
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="bg-gray-50 text-left text-gray-600">
+                        <th class="px-6 py-3 font-medium">Месяц</th>
+                        <th class="px-6 py-3 font-medium text-center">
+                            Платежей
+                        </th>
+                        <th class="px-6 py-3 font-medium text-right">
+                            Сумма
+                        </th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100">
+                    {% for item in monthly_breakdown %}
+                    <tr class="hover:bg-gray-50">
+                        <td class="px-6 py-3 font-medium capitalize">
+                            {{ item.month|date:"F Y"|lower }}
+                        </td>
+                        <td class="px-6 py-3 text-center text-gray-600">
+                            {{ item.count }}
+                        </td>
+                        <td class="px-6 py-3 text-right font-bold text-green-600">
+                            {{ item.total|floatformat:0 }} ₽
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+                <tfoot>
+                    <tr class="bg-gray-50 font-bold">
+                        <td class="px-6 py-3">Итого</td>
+                        <td class="px-6 py-3 text-center">{{ all_time_count }}</td>
+                        <td class="px-6 py-3 text-right text-green-700">
+                            {{ all_time_total|floatformat:0 }} ₽
+                        </td>
+                    </tr>
+                </tfoot>
+            </table>
+            {% else %}
+            <p class="px-6 py-4 text-gray-500">Платежей пока нет.</p>
+            {% endif %}
+        </div>
+    </details>
+</div>
+
+<!-- Должники и почти должники -->
+<div class="grid gap-6 md:grid-cols-2 mb-8">
+    <div class="bg-red-50 border border-red-200 rounded-xl p-5">
+        <h3 class="font-semibold text-red-800 mb-3">
+            ⚠️ Должники (0 занятий): {{ debtors.count }}
+        </h3>
+        {% if debtors %}
+        <ul class="space-y-1 text-sm">
+            {% for e in debtors %}
+            <li>
+                <span class="font-medium">{{ e.child.full_name }}</span>
+                <span class="text-gray-500">
+                    — {{ e.group.name }}
+                    {% if e.child.parent %}
+                        ({{ e.child.parent.user.get_full_name|default:e.child.parent.user.username }})
+                    {% else %}
+                        (без родителя)
+                    {% endif %}
+                </span>
+            </li>
+            {% endfor %}
+        </ul>
+        {% else %}
+        <p class="text-sm text-red-600">Должников нет ✓</p>
+        {% endif %}
+    </div>
+
+    <div class="bg-yellow-50 border border-yellow-200 rounded-xl p-5">
+        <h3 class="font-semibold text-yellow-800 mb-3">
+            ⏰ Почти должники (1–2 занятия): {{ almost_debtors.count }}
+        </h3>
+        {% if almost_debtors %}
+        <ul class="space-y-1 text-sm">
+            {% for e in almost_debtors %}
+            <li>
+                <span class="font-medium">{{ e.child.full_name }}</span>
+                <span class="text-gray-500">
+                    — {{ e.group.name }} (ост.: {{ e.remaining_lessons }})
+                </span>
+            </li>
+            {% endfor %}
+        </ul>
+        {% else %}
+        <p class="text-sm text-yellow-700">Всё в порядке ✓</p>
+        {% endif %}
+    </div>
+</div>
+<!-- Последние платежи -->
+<h2 class="text-lg font-semibold mb-3">Последние 20 платежей</h2>
+{% if recent_payments %}
+<div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+    <table class="w-full text-sm">
+        <thead>
+            <tr class="bg-gray-50 text-left text-gray-600">
+                <th class="px-4 py-3">Дата</th>
+                <th class="px-4 py-3">Родитель</th>
+                <th class="px-4 py-3">Ребёнок</th>
+                <th class="px-4 py-3">Способ</th>
+                <th class="px-4 py-3 text-right">Сумма</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+            {% for p in recent_payments %}
+            <tr class="hover:bg-gray-50">
+                <td class="px-4 py-3">{{ p.paid_at|date:"d.m.Y" }}</td>
+                <td class="px-4 py-3">{{ p.parent }}</td>
+                <td class="px-4 py-3">{{ p.child.full_name }}</td>
+                <td class="px-4 py-3">{{ p.get_method_display }}</td>
+                <td class="px-4 py-3 text-right font-semibold text-green-600">
+                    {{ p.amount|floatformat:0 }} ₽
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<p class="text-gray-500">Платежей пока нет.</p>
+{% endif %}
+{% endblock %}

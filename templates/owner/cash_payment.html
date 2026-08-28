@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+{% block title %}Наличная оплата — Сердце Самбо{% endblock %}
+
+{% block content %}
+<div class="mb-6">
+    <a href="/owner/" class="text-sm text-accent hover:underline">← Назад</a>
+</div>
+
+<h1 class="text-2xl font-bold mb-6">💵 Наличная оплата</h1>
+
+<div class="grid gap-6 lg:grid-cols-2">
+
+    <!-- Форма -->
+    <form method="post"
+          class="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+        {% csrf_token %}
+
+        <!-- Выбор ребёнка -->
+        <div class="mb-4">
+            <label class="block text-sm font-medium text-gray-700 mb-1">
+                Ребёнок *
+            </label>
+            <select name="child" required id="child-select"
+                    onchange="updateTariffs()"
+                    class="w-full px-4 py-2.5 border border-gray-300
+                           rounded-xl focus:ring-2 focus:ring-red-500
+                           focus:border-red-500 outline-none">
+                <option value="">— Выберите ребёнка —</option>
+                {% for child in children %}
+                <option value="{{ child.id }}"
+                        data-price1="{% if child.group %}{{ child.group.price_per_lesson|floatformat:2 }}{% else %}0{% endif %}"
+                        data-price4="{% if child.group %}{{ child.group.price_abonement_4|floatformat:2 }}{% else %}0{% endif %}">
+                    {{ child.full_name }}
+                    {% if child.group %}— {{ child.group.name }}{% else %}— без группы{% endif %}
+                    — ост: {{ child.remaining_lessons }}
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <!-- Выбор тарифа -->
+        <div class="mb-4">
+            <label class="block text-sm font-medium text-gray-700 mb-2">
+                Тариф *
+            </label>
+            <div class="grid grid-cols-2 gap-3">
+                <label class="border-2 border-gray-200 rounded-xl p-4
+                              cursor-pointer hover:border-red-500
+                              transition text-center tariff-option">
+                    <input type="radio" name="tariff" value="1"
+                           class="sr-only" required>
+                    <p class="font-semibold text-sm mb-1">1 занятие</p>
+                    <p class="text-xl font-bold text-primary" id="price-1">—</p>
+                </label>
+                <label class="border-2 border-gray-200 rounded-xl p-4
+                              cursor-pointer hover:border-red-500
+                              transition text-center tariff-option">
+                    <input type="radio" name="tariff" value="4"
+                           class="sr-only" required>
+                    <p class="font-semibold text-sm mb-1">Абонемент 4</p>
+                    <p class="text-xl font-bold text-primary" id="price-4">—</p>
+                </label>
+            </div>
+        </div>
+
+        <!-- Комментарий -->
+        <div class="mb-6">
+            <label class="block text-sm font-medium text-gray-700 mb-1">
+                Комментарий
+            </label>
+            <textarea name="note" rows="2"
+                      class="w-full px-4 py-2.5 border border-gray-300
+                             rounded-xl focus:ring-2 focus:ring-red-500
+                             focus:border-red-500 outline-none"
+                      placeholder="Например: оплата за сентябрь"></textarea>
+        </div>
+
+        <button type="submit"
+                class="w-full bg-primary hover:bg-red-700
+                       text-white font-medium py-3 rounded-xl transition">
+            Зафиксировать оплату
+        </button>
+    </form>
+
+    <!-- Последние платежи -->
+    <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+        <h2 class="font-semibold mb-3">Последние наличные</h2>
+        {% if recent_payments %}
+        <div class="space-y-2">
+            {% for p in recent_payments %}
+            <div class="flex justify-between items-center
+                        border-b border-gray-100 pb-2 last:border-0">
+                <div>
+                    <p class="text-sm font-medium">{{ p.child.full_name }}</p>
+                    <p class="text-xs text-gray-500">
+                        {{ p.paid_at|date:"d.m.Y" }} · {{ p.lessons_count }} зан.
+                    </p>
+                </div>
+                <p class="font-bold text-green-600">
+                    {{ p.amount|floatformat:0 }} ₽
+                </p>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="text-gray-500 text-sm">Наличных платежей пока нет.</p>
+        {% endif %}
+    </div>
+</div>
+
+<style>
+    .tariff-option:has(input:checked) {
+        border-color: #DC2626;
+        background-color: #FEF2F2;
+    }
+</style>
+
+<script>
+function updateTariffs() {
+    var select = document.getElementById('child-select');
+    var option = select.options[select.selectedIndex];
+
+    var price1El = document.getElementById('price-1');
+    var price4El = document.getElementById('price-4');
+
+    if (!option || !option.value) {
+        price1El.textContent = '—';
+        price4El.textContent = '—';
+        return;
+    }
+
+    var price1 = parseFloat(option.getAttribute('data-price1'));
+    var price4 = parseFloat(option.getAttribute('data-price4'));
+
+    if (isNaN(price1) || price1 <= 0) {
+        price1El.textContent = '—';
+    } else {
+        price1El.textContent = Math.round(price1) + ' ₽';
+    }
+
+    if (isNaN(price4) || price4 <= 0) {
+        price4El.textContent = '—';
+    } else {
+        price4El.textContent = Math.round(price4) + ' ₽';
+    }
+}
+</script>
+{% endblock %}

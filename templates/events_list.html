@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}События — Сердце Самбо{% endblock %}
+
+{% block content %}
+<h1 class="text-2xl font-bold mb-6">📅 Предстоящие события</h1>
+
+{% if events %}
+<div class="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+    {% for event in events %}
+    <div class="bg-white rounded-xl shadow-sm border border-gray-100
+                overflow-hidden hover:shadow-md transition">
+        {% if event.image %}
+        <img src="{{ event.image.url }}" alt="{{ event.title }}"
+             class="w-full h-48 object-cover">
+        {% else %}
+        <div class="w-full h-48 bg-gradient-to-br from-red-100 to-orange-100
+                    flex items-center justify-center text-5xl">
+            🏆
+        </div>
+        {% endif %}
+
+        <div class="p-5">
+            <p class="text-xs text-gray-500 mb-2">
+                📅 {{ event.date|date:"d.m.Y" }}
+                {% if event.time %} • {{ event.time|time:"H:i" }}{% endif %}
+            </p>
+            <h2 class="font-bold text-lg mb-2">{{ event.title }}</h2>
+            
+            {% if event.location %}
+            <p class="text-xs text-gray-600 mb-2">
+                📍 {{ event.location }}
+            </p>
+            {% endif %}
+
+            {% if event.is_registration_required %}
+            <div class="flex items-center gap-2 mb-3">
+                {% if event.price > 0 %}
+                <span class="px-2 py-0.5 bg-blue-100 text-blue-700
+                             rounded-full text-xs">
+                    💰 {{ event.price|floatformat:0 }} ₽
+                </span>
+                {% else %}
+                <span class="px-2 py-0.5 bg-green-100 text-green-700
+                             rounded-full text-xs">
+                    Бесплатно
+                </span>
+                {% endif %}
+                
+                {% if event.spots_available is not None %}
+                <span class="px-2 py-0.5 bg-gray-100 text-gray-700
+                             rounded-full text-xs">
+                    👥 {{ event.spots_available }} мест
+                </span>
+                {% endif %}
+            </div>
+            {% endif %}
+
+            <a href="{% url 'event_detail' event.pk %}"
+               class="inline-block bg-primary hover:bg-red-700
+                      text-white text-sm font-medium
+                      py-2 px-4 rounded-lg transition">
+                Подробнее →
+            </a>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="bg-white rounded-xl p-12 text-center">
+    <div class="text-6xl mb-4">📭</div>
+    <h2 class="text-xl font-bold text-gray-700 mb-2">Событий пока нет</h2>
+    <p class="text-gray-500">Загляните позже — мы обязательно что-то организуем!</p>
+</div>
+{% endif %}
+
+<!-- Прошедшие события -->
+{% if past_events %}
+<div class="mt-12">
+    <h2 class="text-xl font-bold mb-4 text-gray-600">Прошедшие события</h2>
+    <div class="grid gap-4 md:grid-cols-3">
+        {% for event in past_events %}
+        <div class="bg-gray-50 rounded-lg p-4 opacity-70">
+            <p class="text-xs text-gray-500 mb-1">
+                {{ event.date|date:"d.m.Y" }}
+            </p>
+            <p class="font-medium text-gray-700">{{ event.title }}</p>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+{% endblock %}
