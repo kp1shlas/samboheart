@@ -485,29 +485,26 @@ def pay_for_enrollment(request, enrollment_id, tariff_code):
     group = enrollment.group
     
     # Проверяем права: это родитель или сам ребёнок?
-    has_access = False
     profile = None
     
     # Проверка 1: это родитель ребёнка?
     if hasattr(request.user, 'parent_profile'):
-        parent_profile = request.user.parent_profile
-        if child.parent == parent_profile:
-            has_access = True
-            profile = parent_profile
+        if child.parent == request.user.parent_profile:
+            profile = request.user.parent_profile
     
     # Проверка 2: это сам ребёнок?
-    if not has_access and hasattr(request.user, 'child_profile'):
+    if profile is None and hasattr(request.user, 'child_profile'):
         if request.user.child_profile == child:
-            has_access = True
-            # Для ребёнка используем его "родительский" профиль для платежа
-            # (или создаём временный, если родителя нет)
+            # Используем родителя ребёнка, если есть
             if child.parent:
                 profile = child.parent
             else:
                 # Создаём временный профиль родителя для платежа
-                profile, _ = ParentProfile.objects.get_or_create(user=request.user)
+                profile, _ = ParentProfile.objects.get_or_create(
+                    user=request.user
+                )
     
-    if not has_access:
+    if profile is None:
         messages.error(request, 'Нет доступа к оплате этой группы.')
         return redirect('dashboard')
     
