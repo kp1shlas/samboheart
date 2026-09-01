@@ -475,7 +475,6 @@ def pay_view(request):
 def pay_for_enrollment(request, enrollment_id, tariff_code):
     """Оплата за конкретную запись в группу (для родителя или ребёнка)"""
     
-    # Получаем запись в группу
     enrollment = get_object_or_404(
         ChildEnrollment,
         id=enrollment_id,
@@ -484,22 +483,20 @@ def pay_for_enrollment(request, enrollment_id, tariff_code):
     child = enrollment.child
     group = enrollment.group
     
-    # Проверяем права: это родитель или сам ребёнок?
+    # Определяем профиль плательщика
     profile = None
     
-    # Проверка 1: это родитель ребёнка?
+    # Это родитель ребёнка?
     if hasattr(request.user, 'parent_profile'):
         if child.parent == request.user.parent_profile:
             profile = request.user.parent_profile
     
-    # Проверка 2: это сам ребёнок?
+    # Это сам ребёнок?
     if profile is None and hasattr(request.user, 'child_profile'):
         if request.user.child_profile == child:
-            # Используем родителя ребёнка, если есть
             if child.parent:
                 profile = child.parent
             else:
-                # Создаём временный профиль родителя для платежа
                 profile, _ = ParentProfile.objects.get_or_create(
                     user=request.user
                 )
@@ -521,19 +518,16 @@ def pay_for_enrollment(request, enrollment_id, tariff_code):
         messages.error(request, 'Неверный тариф.')
         return redirect('child_detail', child_id=child.id)
     
-    # Применяем скидку
     price_info = calculate_discounted_price(enrollment, base_price)
     amount = price_info['discounted_price']
     
     if amount <= 0:
         messages.info(
             request,
-            f'Занятие для {child.full_name} в группе {group.name} бесплатное. '
-            f'Обратитесь к администратору для записи.'
+            f'Занятие для {child.full_name} в группе {group.name} бесплатное.'
         )
         return redirect('child_detail', child_id=child.id)
     
-    # Создаём платёж
     order_id = str(uuid.uuid4())[:8]
     payment = Payment.objects.create(
         parent=profile,
@@ -546,7 +540,6 @@ def pay_for_enrollment(request, enrollment_id, tariff_code):
         note=description,
     )
     
-    # Создаём платёжную ссылку
     service = TochkaPaymentService()
     result = service.create_payment_link(
         amount=amount,

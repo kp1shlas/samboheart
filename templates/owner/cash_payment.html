@@ -10,12 +10,10 @@
 
 <div class="grid gap-6 lg:grid-cols-2">
 
-    <!-- Форма -->
     <form method="post"
           class="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
         {% csrf_token %}
 
-        <!-- Выбор ребёнка и группы -->
         <div class="mb-4">
             <label class="block text-sm font-medium text-gray-700 mb-1">
                 Ребёнок и группа *
@@ -40,7 +38,6 @@
             </select>
         </div>
 
-        <!-- Выбор тарифа -->
         <div class="mb-4">
             <label class="block text-sm font-medium text-gray-700 mb-2">
                 Тариф *
@@ -65,13 +62,11 @@
             </div>
         </div>
 
-        <!-- Предупреждение о бесплатных -->
         <div id="free-warning" class="hidden mb-4 p-3 bg-green-50 
                     border border-green-200 rounded-lg text-sm text-green-800">
             ⭐ У этого ребёнка бесплатные занятия. Сумма будет 0 ₽.
         </div>
 
-        <!-- Комментарий -->
         <div class="mb-6">
             <label class="block text-sm font-medium text-gray-700 mb-1">
                 Комментарий
@@ -90,7 +85,6 @@
         </button>
     </form>
 
-    <!-- Последние платежи -->
     <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
         <h2 class="font-semibold mb-3">Последние наличные</h2>
         {% if recent_payments %}
@@ -121,7 +115,6 @@
 function updateTariffs() {
     var select = document.getElementById('enrollment-select');
     var option = select.options[select.selectedIndex];
-
     var price1El = document.getElementById('price-1');
     var price4El = document.getElementById('price-4');
     var freeWarning = document.getElementById('free-warning');
@@ -134,7 +127,6 @@ function updateTariffs() {
     }
 
     var isFree = option.getAttribute('data-is-free') === '1';
-    
     if (isFree) {
         price1El.textContent = '0 ₽';
         price4El.textContent = '0 ₽';
@@ -147,17 +139,8 @@ function updateTariffs() {
     var price1 = parseFloat(option.getAttribute('data-price1'));
     var price4 = parseFloat(option.getAttribute('data-price4'));
 
-    if (isNaN(price1) || price1 <= 0) {
-        price1El.textContent = '—';
-    } else {
-        price1El.textContent = Math.round(price1) + ' ₽';
-    }
-
-    if (isNaN(price4) || price4 <= 0) {
-        price4El.textContent = '—';
-    } else {
-        price4El.textContent = Math.round(price4) + ' ₽';
-    }
+    price1El.textContent = (isNaN(price1) || price1 <= 0) ? '—' : Math.round(price1) + ' ₽';
+    price4El.textContent = (isNaN(price4) || price4 <= 0) ? '—' : Math.round(price4) + ' ₽';
 }
 </script>
 {% endblock %}
