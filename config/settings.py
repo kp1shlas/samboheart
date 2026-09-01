@@ -190,12 +190,13 @@ SOCIAL_AUTH_PIPELINE = (
     'social_core.pipeline.user.user_details',
 )
 
-# URL для редиректа после входа
 SOCIAL_AUTH_LOGIN_REDIRECT_URL = '/dashboard/'
 SOCIAL_AUTH_LOGIN_ERROR_URL = '/login/'
+SOCIAL_AUTH_VK_OAUTH2_SCOPE = ['email']
 
-# Разрешить частичные профили
-SOCIAL_AUTH_VK_OAUTH2_EXTRA_DATA = ['first_name', 'last_name', 'email']
+# Ключи VK (будут добавлены позже)
+SOCIAL_AUTH_VK_OAUTH2_KEY = os.getenv('VK_APP_ID', '')
+SOCIAL_AUTH_VK_OAUTH2_SECRET = os.getenv('VK_APP_SECRET', '')
 
 # ═══════════════════════════════════════════════════
 # Production security

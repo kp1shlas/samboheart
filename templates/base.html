@@ -140,7 +140,11 @@
                         Кабинет
                         {% endif %}
                     </a>
-
+                    <a href="/change-password/"
+                        class="text-white/90 hover:text-white hover:bg-white/10
+                        px-3 py-2 rounded-lg text-sm transition">
+                        🔐 Сменить пароль
+                    </a>
                     <span class="text-white/70 text-sm mr-2">
                         {% if user.child_profile %}
                         {{ user.child_profile.full_name }}
@@ -203,6 +207,11 @@
                           px-3 py-2 rounded-lg text-sm transition">
                     🏠 Мой кабинет
                 </a>
+                <a href="/change-password/"
+   class="block text-white/90 hover:text-white hover:bg-white/10
+          px-3 py-2 rounded-lg text-sm transition">
+    🔐 Сменить пароль
+</a>
                 {% if user.parent_profile %}
                 <a href="/payments/history/" class="block text-white/90 hover:text-white hover:bg-white/10
           px-3 py-2 rounded-lg text-sm transition">

@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}Тестовая оплата — Сердце Самбо{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto">
+    <div class="bg-white rounded-2xl shadow-lg p-8">
+        <!-- Шапка -->
+        <div class="text-center mb-6">
+            <div class="inline-block bg-yellow-100 text-yellow-700
+                        px-3 py-1 rounded-full text-xs font-medium mb-3">
+                🧪 ТЕСТОВЫЙ РЕЖИМ
+            </div>
+            <h1 class="text-2xl font-bold">Тестовая оплата</h1>
+            <p class="text-gray-600 text-sm mt-2">
+                Это имитация оплаты. Деньги не списываются.
+            </p>
+        </div>
+
+        <!-- Информация о платеже -->
+        <div class="bg-gray-50 rounded-xl p-5 mb-6">
+            <div class="space-y-3 text-sm">
+                <div class="flex justify-between">
+                    <span class="text-gray-600">Ребёнок:</span>
+                    <span class="font-medium">{{ payment.child.full_name }}</span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-gray-600">Назначение:</span>
+                    <span class="font-medium">{{ payment.note|default:"Оплата занятий" }}</span>
+                </div>
+                <div class="flex justify-between text-lg pt-3 border-t">
+                    <span class="font-semibold">Сумма:</span>
+                    <span class="font-bold text-primary">{{ payment.amount|floatformat:0 }} ₽</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Имитация QR-кода -->
+        <div class="border-2 border-dashed border-gray-300 rounded-xl p-8 mb-6 text-center">
+            <div class="inline-block bg-white p-4 rounded-lg shadow-inner mb-4">
+                <svg width="180" height="180" viewBox="0 0 180 180" class="mx-auto">
+                    <rect width="180" height="180" fill="#f3f4f6"/>
+                    <g fill="#1f2937">
+                        <rect x="20" y="20" width="40" height="40"/>
+                        <rect x="120" y="20" width="40" height="40"/>
+                        <rect x="20" y="120" width="40" height="40"/>
+                        <rect x="70" y="30" width="10" height="10"/>
+                        <rect x="90" y="30" width="10" height="10"/>
+                        <rect x="70" y="50" width="10" height="10"/>
+                        <rect x="90" y="50" width="10" height="10"/>
+                        <rect x="70" y="70" width="40" height="10"/>
+                        <rect x="30" y="70" width="10" height="40"/>
+                        <rect x="130" y="70" width="10" height="40"/>
+                        <rect x="70" y="90" width="10" height="10"/>
+                        <rect x="90" y="90" width="10" height="10"/>
+                        <rect x="110" y="90" width="10" height="10"/>
+                        <rect x="70" y="110" width="10" height="10"/>
+                        <rect x="90" y="110" width="10" height="10"/>
+                        <rect x="110" y="110" width="10" height="10"/>
+                        <rect x="130" y="110" width="10" height="10"/>
+                        <rect x="70" y="130" width="10" height="10"/>
+                        <rect x="90" y="130" width="10" height="10"/>
+                        <rect x="110" y="130" width="10" height="10"/>
+                        <rect x="130" y="130" width="10" height="10"/>
+                        <rect x="150" y="130" width="10" height="10"/>
+                        <rect x="70" y="150" width="10" height="10"/>
+                        <rect x="90" y="150" width="10" height="10"/>
+                        <rect x="110" y="150" width="10" height="10"/>
+                        <rect x="130" y="150" width="10" height="10"/>
+                        <rect x="150" y="150" width="10" height="10"/>
+                    </g>
+                </svg>
+            </div>
+            <p class="text-gray-500 text-sm">
+                QR-код появится после подключения Точка Банка
+            </p>
+        </div>
+
+        <!-- Кнопки -->
+        <form method="post" action="{% url 'payment_mock_confirm' %}">
+            {% csrf_token %}
+            <button type="submit"
+                    class="w-full bg-primary hover:bg-red-700
+                           text-white font-semibold py-3 rounded-xl transition mb-3">
+                ✅ Подтвердить тестовую оплату
+            </button>
+        </form>
+
+        <a href="/dashboard/"
+           class="block w-full text-center bg-gray-100 hover:bg-gray-200
+                  text-gray-700 font-medium py-3 rounded-xl transition">
+            Отменить
+        </a>
+
+        <!-- Информация -->
+        <div class="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg text-sm">
+            <p class="text-blue-800">
+                <strong>ℹ️ Тестовый режим:</strong> в этом режиме вы можете проверить,
+                как работает оплата. Занятия будут зачислены, но деньги не спишутся.
+                После подключения банка появится реальный QR-код СБП.
+            </p>
+        </div>
+    </div>
+</div>
+{% endblock %}

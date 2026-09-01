@@ -79,7 +79,7 @@ def login_view(request):
 
         if not username or not password:
             messages.error(request, 'Заполните логин и пароль.')
-            return render(request, 'login.html')
+            return render(request, 'login.html', {'vk_enabled': False})
 
         user = authenticate(request, username=username, password=password)
         if user:
@@ -92,7 +92,11 @@ def login_view(request):
         else:
             messages.error(request, 'Неверный логин или пароль.')
 
-    return render(request, 'login.html')
+    # Определяем, включён ли VK
+    from django.conf import settings
+    vk_enabled = bool(getattr(settings, 'SOCIAL_AUTH_VK_OAUTH2_KEY', ''))
+
+    return render(request, 'login.html', {'vk_enabled': vk_enabled})
 
 
 def register_view(request):
@@ -659,6 +663,76 @@ def payment_cancel(request):
             del request.session['pending_payment_id']
 
     messages.warning(request, 'Оплата была отменена.')
+    return redirect('parent_dashboard')
+@login_required
+def payment_mock_view(request):
+    """Страница тестовой оплаты (mock-режим)"""
+    payment_id = request.session.get('pending_payment_id')
+    if not payment_id:
+        messages.error(request, 'Платёж не найден.')
+        return redirect('parent_dashboard')
+
+    payment = get_object_or_404(Payment, id=payment_id)
+
+    # Проверка прав
+    if hasattr(request.user, 'parent_profile'):
+        if payment.parent != request.user.parent_profile:
+            messages.error(request, 'Нет доступа к этому платежу.')
+            return redirect('parent_dashboard')
+
+    return render(request, 'payment_mock.html', {'payment': payment})
+
+
+@login_required
+def payment_mock_confirm(request):
+    """Подтверждение тестовой оплаты"""
+    payment_id = request.session.get('pending_payment_id')
+    if not payment_id:
+        messages.error(request, 'Платёж не найден.')
+        return redirect('parent_dashboard')
+
+    payment = get_object_or_404(Payment, id=payment_id)
+
+    if hasattr(request.user, 'parent_profile'):
+        if payment.parent != request.user.parent_profile:
+            messages.error(request, 'Нет доступа к этому платежу.')
+            return redirect('parent_dashboard')
+
+    if payment.status == 'paid':
+        messages.info(request, 'Платёж уже был оплачен.')
+        return redirect('parent_dashboard')
+
+    # Подтверждаем оплату
+    payment.status = 'paid'
+    payment.paid_at = timezone.now()
+    payment.save()
+
+    # Обрабатываем в зависимости от типа платежа
+    if payment.event_registration:
+        registration = payment.event_registration
+        registration.status = 'paid'
+        registration.paid_at = timezone.now()
+        registration.save()
+        messages.success(
+            request,
+            f'✅ Тестовая оплата {payment.amount} ₽ прошла! '
+            f'{registration.child.full_name} зарегистрирован на '
+            f'«{registration.event.title}».'
+        )
+    else:
+        result = settle_debts_on_payment(payment)
+        debts_msg = ''
+        if result['debts_settled'] > 0:
+            debts_msg = f' Погашено в долг: {result["debts_settled"]}.'
+        messages.success(
+            request,
+            f'✅ Тестовая оплата {payment.amount} ₽ прошла! '
+            f'Зачислено занятий: {payment.lessons_count}.{debts_msg}'
+        )
+
+    if 'pending_payment_id' in request.session:
+        del request.session['pending_payment_id']
+
     return redirect('parent_dashboard')
 
 @login_required
@@ -1459,3 +1533,44 @@ def tochka_webhook(request):
             payment.save()
 
     return JsonResponse({'ok': True})
+from django.contrib.auth import update_session_auth_hash
+
+@login_required
+def change_password(request):
+    """Смена пароля пользователя"""
+    if request.method == 'POST':
+        old_password = request.POST.get('old_password', '')
+        new_password1 = request.POST.get('new_password1', '')
+        new_password2 = request.POST.get('new_password2', '')
+
+        # Проверка старого пароля
+        if not request.user.check_password(old_password):
+            messages.error(request, '❌ Неверный текущий пароль.')
+            return render(request, 'change_password.html')
+
+        # Проверка совпадения новых паролей
+        if new_password1 != new_password2:
+            messages.error(request, '❌ Новые пароли не совпадают.')
+            return render(request, 'change_password.html')
+
+        # Проверка длины
+        if len(new_password1) < 5:
+            messages.error(request, '❌ Пароль должен быть не менее 5 символов.')
+            return render(request, 'change_password.html')
+
+        # Проверка, что новый пароль отличается от старого
+        if old_password == new_password1:
+            messages.error(request, '❌ Новый пароль должен отличаться от старого.')
+            return render(request, 'change_password.html')
+
+        # Меняем пароль
+        request.user.set_password(new_password1)
+        request.user.save()
+
+        # Обновляем сессию, чтобы пользователь не вышел из системы
+        update_session_auth_hash(request, request.user)
+
+        messages.success(request, '✅ Пароль успешно изменён!')
+        return redirect('dashboard')
+
+    return render(request, 'change_password.html')

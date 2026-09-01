@@ -1,5 +1,5 @@
-from django.urls import path
 from django.conf import settings
+from django.urls import path, include
 from django.conf.urls.static import static
 from . import views
 
@@ -10,6 +10,8 @@ urlpatterns = [
      path('logout/', views.logout_view, name='logout'),
      path('register/', views.register_view, name='register'),
      path('welcome/', views.welcome_view, name='welcome'),
+     path('change-password/', views.change_password, name='change_password'),
+     path('oauth/', include('social_django.urls', namespace='social')),
 
     # ─── Дашборды ──────────────────────────────────────
      path('dashboard/', views.dashboard, name='dashboard'),
@@ -39,6 +41,8 @@ urlpatterns = [
          views.event_pay, name='event_pay'),
      path('payments/history/', views.payment_history, name='payment_history'),
      path('payment/tochka/webhook/', views.tochka_webhook, name='tochka_webhook'),
+     path('payment/mock/', views.payment_mock_view, name='payment_mock'),
+     path('payment/mock/confirm/', views.payment_mock_confirm, name='payment_mock_confirm'),
 
     # ─── Владелец ──────────────────────────────────────
      path('owner/', views.owner_dashboard, name='owner_dashboard'),
