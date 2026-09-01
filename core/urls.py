@@ -19,6 +19,7 @@ urlpatterns = [
      path('child/dashboard/', views.child_dashboard, name='child_dashboard'),
      path('child/<int:child_id>/', views.child_detail, name='child_detail'),
      path('teacher/', views.teacher_dashboard, name='teacher_dashboard'),
+     path('child/certificate/upload/', views.child_upload_certificate, name='child_upload_certificate'),
 
     # ─── Преподаватель: занятия ────────────────────────
      path('teacher/group/<int:group_id>/lessons/',
@@ -53,6 +54,8 @@ urlpatterns = [
          views.owner_certificates, name='owner_certificates'),
      path('owner/groups/', views.owner_groups, name='owner_groups'),
      path('owner/groups/add/', views.owner_add_group, name='owner_add_group'),
+     path('owner/generate-lessons/',
+        views.owner_generate_lessons, name='owner_generate_lessons'),
 
     # ─── Новости и события ─────────────────────────────
      path('news/', views.news_list, name='news_list'),

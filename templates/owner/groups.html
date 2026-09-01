@@ -5,7 +5,28 @@
 <div class="mb-6">
     <a href="/owner/" class="text-sm text-accent hover:underline">← Назад</a>
 </div>
-
+<div class="flex justify-between items-center mb-6 flex-wrap gap-3">
+    <h1 class="text-2xl font-bold">🥋 Группы</h1>
+    <div class="flex gap-2">
+        <!-- Кнопка генерации занятий -->
+        <form method="post" action="{% url 'owner_generate_lessons' %}"
+              onsubmit="return confirm('Сгенерировать занятия на 2 недели вперёд?');">
+            {% csrf_token %}
+            <button type="submit"
+                    class="bg-blue-600 hover:bg-blue-700 text-white
+                           text-sm font-medium px-4 py-2 rounded-lg transition">
+                📅 Генерация на 2 недели
+            </button>
+        </form>
+        
+        <!-- Кнопка создания группы -->
+        <a href="{% url 'owner_add_group' %}"
+           class="bg-primary hover:bg-red-700 text-white
+                  text-sm font-medium px-4 py-2 rounded-lg transition">
+            + Новая группа
+        </a>
+    </div>
+</div>
 <div class="flex justify-between items-center mb-6">
     <h1 class="text-2xl font-bold">👥 Группы</h1>
     <a href="/owner/groups/add/"
@@ -37,7 +58,27 @@
         <p class="text-lg font-bold text-primary mt-2">
             {{ group.monthly_price|floatformat:0 }} ₽/мес
         </p>
+        {% if group.schedule_slots.all %}
+<div class="mt-3 pt-3 border-t border-gray-100">
+    <p class="text-xs font-medium text-gray-600 mb-1">📅 Расписание:</p>
+    <div class="flex flex-wrap gap-1">
+        {% for slot in group.schedule_slots.all %}
+        <span class="inline-flex items-center px-2 py-1 bg-blue-50 text-blue-700
+                     rounded text-xs">
+            {{ slot.get_day_of_week_display|truncatechars:3 }}
+            {{ slot.start_time|time:"H:i" }}
+            ({{ slot.duration_minutes }} мин)
+        </span>
+        {% endfor %}
     </div>
+</div>
+{% else %}
+<p class="mt-3 text-xs text-gray-400 italic">
+    Расписание не задано
+</p>
+{% endif %}
+    </div>
+    
     {% endfor %}
 </div>
 {% endblock %}

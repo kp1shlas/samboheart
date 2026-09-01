@@ -2,7 +2,7 @@ import os
 import uuid
 from decimal import Decimal
 from datetime import timedelta
-
+from datetime import time as datetime_time
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth import login, logout, authenticate
 from django.contrib.auth.decorators import login_required
@@ -1227,34 +1227,101 @@ def owner_add_group(request):
         description = request.POST.get('description', '')
         teacher_id = request.POST.get('teacher')
 
-        if name:
-            group = Group.objects.create(
-                name=name,
-                price_per_lesson=(
-                    Decimal(price_per_lesson) if price_per_lesson else 0
-                ),
-                price_abonement_4=(
-                    Decimal(price_abonement_4) if price_abonement_4 else 0
-                ),
-                max_capacity=int(max_capacity) if max_capacity else 20,
-                description=description,
-                is_active=True,
-            )
-            if teacher_id:
-                try:
-                    group.teacher = TeacherProfile.objects.get(id=teacher_id)
-                    group.save()
-                except TeacherProfile.DoesNotExist:
-                    pass
+        if not name:
+            messages.error(request, 'Введите название группы.')
+            teachers = TeacherProfile.objects.all()
+            return render(request, 'owner/add_group.html', {
+                'teachers': teachers,
+            })
 
-            messages.success(request, f'Группа «{name}» создана.')
-            return redirect('owner_groups')
+        group = Group.objects.create(
+            name=name,
+            price_per_lesson=(
+                Decimal(price_per_lesson) if price_per_lesson else 0
+            ),
+            price_abonement_4=(
+                Decimal(price_abonement_4) if price_abonement_4 else 0
+            ),
+            max_capacity=int(max_capacity) if max_capacity else 20,
+            description=description,
+            is_active=True,
+        )
+
+        if teacher_id:
+            try:
+                group.teacher = TeacherProfile.objects.get(id=teacher_id)
+                group.save()
+            except TeacherProfile.DoesNotExist:
+                pass
+
+        # Обработка расписания
+        days = request.POST.getlist('schedule_day')
+        times = request.POST.getlist('schedule_time')
+        durations = request.POST.getlist('schedule_duration')
+
+        slots_created = 0
+        for day, time_str, duration_str in zip(days, times, durations):
+            if day and time_str:
+                try:
+                    hour, minute = map(int, time_str.split(':'))
+                    start_time_obj = datetime_time(hour, minute)
+                    duration = int(duration_str) if duration_str else 60
+                    
+                    ScheduleSlot.objects.create(
+                        group=group,
+                        day_of_week=int(day),
+                        start_time=start_time_obj,
+                        duration_minutes=duration,
+                    )
+                    slots_created += 1
+                except (ValueError, TypeError):
+                    continue
+
+        messages.success(
+            request,
+            f'Группа «{name}» создана. '
+            f'Добавлено слотов расписания: {slots_created}.'
+        )
+        return redirect('owner_groups')
 
     teachers = TeacherProfile.objects.all()
     return render(request, 'owner/add_group.html', {
         'teachers': teachers,
     })
 
+@owner_required
+def owner_generate_lessons(request):
+    """Генерация занятий на 2 недели вперёд"""
+    if request.method != 'POST':
+        return redirect('owner_groups')
+
+    from django.core.management import call_command
+    from io import StringIO
+
+    out = StringIO()
+    try:
+        call_command('generate_lessons', '--days=14', stdout=out)
+        output = out.getvalue()
+        
+        # Парсим количество созданных занятий
+        lines = output.split('\n')
+        created = 0
+        for line in lines:
+            if 'Всего создано занятий:' in line:
+                try:
+                    created = int(line.split(':')[-1].strip())
+                except ValueError:
+                    pass
+        
+        messages.success(
+            request,
+            f'✅ Занятия сгенерированы на 2 недели вперёд! '
+            f'Создано занятий: {created}.'
+        )
+    except Exception as e:
+        messages.error(request, f'Ошибка генерации: {e}')
+
+    return redirect('owner_groups')
 
 # ═══════════════════════════════════════════════════════
 # НОВОСТИ И СОБЫТИЯ
@@ -1574,3 +1641,66 @@ def change_password(request):
         return redirect('dashboard')
 
     return render(request, 'change_password.html')
+
+from core.models import Certificate
+
+@login_required
+def child_upload_certificate(request):
+    """Загрузка справки ребёнком"""
+    if not hasattr(request.user, 'child_profile'):
+        messages.error(request, 'Доступ только для детей.')
+        return redirect('home')
+    
+    child = request.user.child_profile
+    
+    if request.method == 'POST':
+        file = request.FILES.get('file')
+        date_from = request.POST.get('date_from')
+        date_to = request.POST.get('date_to')
+        reason = request.POST.get('reason', '')
+        
+        if not file:
+            messages.error(request, 'Выберите файл справки.')
+            return redirect('child_upload_certificate')
+        
+        if not date_from or not date_to:
+            messages.error(request, 'Укажите период действия справки.')
+            return redirect('child_upload_certificate')
+        
+        # Проверка расширения
+        allowed_ext = ['.pdf', '.jpg', '.jpeg', '.png', '.heic']
+        ext = os.path.splitext(file.name)[1].lower()
+        if ext not in allowed_ext:
+            messages.error(
+                request,
+                f'Недопустимый формат файла. Разрешены: {", ".join(allowed_ext)}'
+            )
+            return redirect('child_upload_certificate')
+        
+        # Проверка размера (не более 10 МБ)
+        if file.size > 10 * 1024 * 1024:
+            messages.error(request, 'Файл слишком большой. Максимум 10 МБ.')
+            return redirect('child_upload_certificate')
+        
+        Certificate.objects.create(
+            child=child,
+            file=file,
+            date_from=date_from,
+            date_to=date_to,
+            reason=reason,
+            status='pending',
+        )
+        
+        messages.success(
+            request,
+            '✅ Справка загружена! Владелец проверит её в ближайшее время.'
+        )
+        return redirect('child_dashboard')
+    
+    # Список уже загруженных справок
+    certificates = Certificate.objects.filter(child=child).order_by('-uploaded_at')
+    
+    return render(request, 'child_upload_certificate.html', {
+        'child': child,
+        'certificates': certificates,
+    })

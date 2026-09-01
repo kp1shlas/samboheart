@@ -31,7 +31,11 @@
 
                 <p class="text-sm text-gray-600 mb-1">
                     <strong>Родитель:</strong>
+                    {% if cert.child.parent %}
                     {{ cert.child.parent.user.get_full_name|default:cert.child.parent.user.username }}
+                    {% else %}
+                    <span class="text-orange-600">Не назначен</span>
+                     {% endif %}
                 </p>
                 {% if cert.date_from and cert.date_to %}
                 <p class="text-sm text-gray-600 mb-1">
