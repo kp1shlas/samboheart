@@ -28,9 +28,11 @@ from .services.certificates import approve_certificate, reject_certificate
 # ═══════════════════════════════════════════════════════
 
 def get_parent_profile(user):
+    # Если это ребёнок — не создаём parent_profile
+    if hasattr(user, 'child_profile'):
+        return None
     profile, _ = ParentProfile.objects.get_or_create(user=user)
     return profile
-
 
 def get_teacher_profile(user):
     profile, _ = TeacherProfile.objects.get_or_create(user=user)
@@ -46,6 +48,7 @@ def owner_required(view_func):
 
 
 def get_user_role(user):
+    """Определяет роль пользователя с приоритетом child > parent"""
     if not user.is_authenticated:
         return 'guest'
     if user.is_superuser:
@@ -54,10 +57,11 @@ def get_user_role(user):
         return 'admin'
     if hasattr(user, 'teacher_profile'):
         return 'teacher'
-    if hasattr(user, 'parent_profile'):
-        return 'parent'
+    # ВАЖНО: проверяем child_profile ПЕРЕД parent_profile
     if hasattr(user, 'child_profile'):
         return 'child'
+    if hasattr(user, 'parent_profile'):
+        return 'parent'
     return 'guest'
 
 
@@ -246,6 +250,10 @@ def welcome_view(request):
 
 @login_required
 def parent_dashboard(request):
+
+    if hasattr(request.user, 'child_profile'):
+        return redirect('child_dashboard')
+    
     profile = get_parent_profile(request.user)
     children = profile.children.filter(
         is_active=True
@@ -283,6 +291,15 @@ def parent_dashboard(request):
 
 @login_required
 def child_detail(request, child_id):
+    
+    if hasattr(request.user, 'child_profile'):
+        if request.user.child_profile.id == child_id:
+            return child_dashboard(request)
+        else:
+            messages.error(request, 'Нет доступа к этому профилю.')
+            return redirect('child_dashboard')
+    
+        
     profile = get_parent_profile(request.user)
     child = get_object_or_404(Child, id=child_id, parent=profile)
 
