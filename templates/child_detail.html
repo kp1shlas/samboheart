@@ -113,10 +113,14 @@
             <p class="text-green-700 font-medium mb-1">
                 {{ item.enrollment.group.name }}
             </p>
-            <p class="text-sm text-green-600">
-                Преподаватель:
-                {{ item.enrollment.group.teacher|default:"не назначен" }}
-            </p>
+            <p class="text-sm text-gray-600">
+    Преподаватель: 
+    {% if item.enrollment.group.teacher %}
+        {{ item.enrollment.group.teacher.user.get_full_name|default:item.enrollment.group.teacher.user.username }}
+    {% else %}
+        не назначен
+    {% endif %}
+</p>
         </div>
 
         <!-- Расписание для бесплатных -->
@@ -147,10 +151,14 @@
                 <h3 class="text-lg font-bold">
                     {{ item.enrollment.group.name }}
                 </h3>
-                <p class="text-sm text-gray-500">
-                    Преподаватель:
-                    {{ item.enrollment.group.teacher|default:"не назначен" }}
-                </p>
+                <p class="text-sm text-gray-600">
+    Преподаватель: 
+    {% if item.enrollment.group.teacher %}
+        {{ item.enrollment.group.teacher.user.get_full_name|default:item.enrollment.group.teacher.user.username }}
+    {% else %}
+        не назначен
+    {% endif %}
+</p>
             </div>
             <div class="text-right">
                 <p class="text-sm text-gray-600">Осталось занятий:</p>
