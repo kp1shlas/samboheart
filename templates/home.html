@@ -25,7 +25,57 @@
         </div>
     </div>
 </div>
-
+<!-- ═══════════════════════════════════════════════════ -->
+<!-- БЛИЖАЙШИЕ ЗАНЯТИЯ                                   -->
+<!-- ═══════════════════════════════════════════════════ -->
+{% if upcoming_lessons %}
+<section class="mb-12">
+    <div class="flex items-center justify-between mb-6">
+        <h2 class="text-2xl font-bold">📅 Ближайшие занятия</h2>
+        <span class="text-sm text-gray-500">на 7 дней вперёд</span>
+    </div>
+    
+    <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {% for lesson in upcoming_lessons %}
+        <div class="bg-white rounded-xl shadow-sm border border-gray-100
+                    p-5 hover:shadow-md transition">
+            <!-- Дата -->
+            <div class="flex items-center gap-3 mb-3">
+                <div class="w-14 h-14 rounded-xl bg-red-50 border border-red-100
+                            flex flex-col items-center justify-center">
+                    <span class="text-lg font-bold text-primary leading-none">
+                        {{ lesson.date|date:"d" }}
+                    </span>
+                    <span class="text-[10px] text-red-400 uppercase">
+                        {{ lesson.date|date:"M" }}
+                    </span>
+                </div>
+                <div>
+                    <p class="font-semibold text-gray-800">
+                        {{ lesson.date|date:"l" }}
+                    </p>
+                    <p class="text-sm text-gray-500">
+                        🕐 {{ lesson.start_time|time:"H:i" }}
+                    </p>
+                </div>
+            </div>
+            
+            <!-- Группа -->
+            <div class="pt-3 border-t border-gray-100">
+                <p class="font-medium text-gray-800 text-sm mb-1">
+                    🥋 {{ lesson.group.name }}
+                </p>
+                {% if lesson.group.teacher %}
+                <p class="text-xs text-gray-500">
+                    👤 {{ lesson.group.teacher.user.get_full_name|default:lesson.group.teacher.user.username }}
+                </p>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</section>
+{% endif %}
 {% if news %}
 <h2 class="text-xl font-bold mb-4">📰 Последние новости</h2>
 <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 mb-10">
