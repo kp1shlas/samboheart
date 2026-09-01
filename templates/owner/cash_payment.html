@@ -66,7 +66,8 @@
         </div>
 
         <!-- Предупреждение о бесплатных -->
-        <div id="free-warning" class="hidden mb-4 p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-800">
+        <div id="free-warning" class="hidden mb-4 p-3 bg-green-50 
+                    border border-green-200 rounded-lg text-sm text-green-800">
             ⭐ У этого ребёнка бесплатные занятия. Сумма будет 0 ₽.
         </div>
 
@@ -158,19 +159,5 @@ function updateTariffs() {
         price4El.textContent = Math.round(price4) + ' ₽';
     }
 }
-
-// Подсветка выбранного тарифа
-document.querySelectorAll('.tariff-option input').forEach(function(input) {
-    input.addEventListener('change', function() {
-        document.querySelectorAll('.tariff-option').forEach(function(opt) {
-            opt.classList.remove('border-red-500', 'bg-red-50');
-            opt.classList.add('border-gray-200');
-        });
-        if (this.checked) {
-            this.closest('.tariff-option').classList.remove('border-gray-200');
-            this.closest('.tariff-option').classList.add('border-red-500', 'bg-red-50');
-        }
-    });
-});
 </script>
 {% endblock %}

@@ -194,14 +194,32 @@ def logout_view(request):
 # ═══════════════════════════════════════════════════════
 
 def home_view(request):
+    today = timezone.now().date()
+    
     news = News.objects.filter(is_published=True)[:3]
+    
     events = Event.objects.filter(
         is_published=True,
-        date__gte=timezone.now().date(),
+        date__gte=today,
     ).order_by('date')[:3]
+    
+    # Ближайшие занятия на 7 дней
+    upcoming_lessons = (
+        Lesson.objects
+        .filter(
+            date__gte=today,
+            date__lte=today + timedelta(days=7),
+            is_cancelled=False,
+            group__is_active=True,
+        )
+        .select_related('group', 'group__teacher')
+        .order_by('date', 'start_time')[:8]
+    )
+    
     return render(request, 'home.html', {
         'news': news,
         'events': events,
+        'upcoming_lessons': upcoming_lessons,
     })
 
 
@@ -455,17 +473,45 @@ def pay_view(request):
 
 @login_required
 def pay_for_enrollment(request, enrollment_id, tariff_code):
-    """Оплата за конкретную запись в группу"""
-    profile = get_parent_profile(request.user)
+    """Оплата за конкретную запись в группу (для родителя или ребёнка)"""
+    
+    # Получаем запись в группу
     enrollment = get_object_or_404(
         ChildEnrollment,
         id=enrollment_id,
-        child__parent=profile,
         is_active=True,
     )
     child = enrollment.child
     group = enrollment.group
-
+    
+    # Проверяем права: это родитель или сам ребёнок?
+    has_access = False
+    profile = None
+    
+    # Проверка 1: это родитель ребёнка?
+    if hasattr(request.user, 'parent_profile'):
+        parent_profile = request.user.parent_profile
+        if child.parent == parent_profile:
+            has_access = True
+            profile = parent_profile
+    
+    # Проверка 2: это сам ребёнок?
+    if not has_access and hasattr(request.user, 'child_profile'):
+        if request.user.child_profile == child:
+            has_access = True
+            # Для ребёнка используем его "родительский" профиль для платежа
+            # (или создаём временный, если родителя нет)
+            if child.parent:
+                profile = child.parent
+            else:
+                # Создаём временный профиль родителя для платежа
+                profile, _ = ParentProfile.objects.get_or_create(user=request.user)
+    
+    if not has_access:
+        messages.error(request, 'Нет доступа к оплате этой группы.')
+        return redirect('dashboard')
+    
+    # Определяем тариф
     if tariff_code == 'single':
         base_price = group.price_per_lesson
         lessons_count = 1
@@ -477,10 +523,11 @@ def pay_for_enrollment(request, enrollment_id, tariff_code):
     else:
         messages.error(request, 'Неверный тариф.')
         return redirect('child_detail', child_id=child.id)
-
+    
+    # Применяем скидку
     price_info = calculate_discounted_price(enrollment, base_price)
     amount = price_info['discounted_price']
-
+    
     if amount <= 0:
         messages.info(
             request,
@@ -488,7 +535,8 @@ def pay_for_enrollment(request, enrollment_id, tariff_code):
             f'Обратитесь к администратору для записи.'
         )
         return redirect('child_detail', child_id=child.id)
-
+    
+    # Создаём платёж
     order_id = str(uuid.uuid4())[:8]
     payment = Payment.objects.create(
         parent=profile,
@@ -500,14 +548,15 @@ def pay_for_enrollment(request, enrollment_id, tariff_code):
         method='online',
         note=description,
     )
-
+    
+    # Создаём платёжную ссылку
     service = TochkaPaymentService()
     result = service.create_payment_link(
         amount=amount,
         description=description,
         order_id=order_id,
     )
-
+    
     if not result['success']:
         payment.status = 'failed'
         payment.save()
@@ -515,11 +564,11 @@ def pay_for_enrollment(request, enrollment_id, tariff_code):
             request, f'Ошибка создания платежа: {result["error"]}'
         )
         return redirect('child_detail', child_id=child.id)
-
+    
     payment.bank_payment_id = result['payment_id']
     payment.save()
     request.session['pending_payment_id'] = payment.id
-
+    
     return redirect(result['url'])
 
 

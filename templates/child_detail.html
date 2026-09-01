@@ -235,7 +235,6 @@
         {% endif %}
 
         <!-- Кнопки оплаты (только для родителя) -->
-        {% if not is_child_view %}
         <div class="grid gap-3 sm:grid-cols-2">
             <a href="{% url 'pay_for_enrollment' item.enrollment.id 'single' %}"
                class="block text-center bg-gray-800 hover:bg-gray-900
@@ -248,12 +247,6 @@
                 Оплатить абонемент
             </a>
         </div>
-        {% else %}
-        <p class="text-center text-sm text-gray-400">
-            💡 Оплату производит родитель
-        </p>
-        {% endif %}
-        {% endif %}
     </div>
     {% endfor %}
 </div>
