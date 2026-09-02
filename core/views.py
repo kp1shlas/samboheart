@@ -11,6 +11,7 @@ from django.utils import timezone
 from django.db.models import Sum, Count, Exists, OuterRef
 from django.db.models.functions import TruncMonth
 from django.http import HttpResponseForbidden
+from datetime import time
 
 from .models import (
     ParentProfile, TeacherProfile, Child, Group,
@@ -1266,7 +1267,8 @@ def owner_add_group(request):
     if request.method == 'POST':
         name = request.POST.get('name', '').strip()
         price_per_lesson = request.POST.get('price_per_lesson', 0)
-        price_abonement_4 = request.POST.get('price_abonement_4', 0)
+        lessons_per_month = request.POST.get('lessons_per_month', 8)
+        price_monthly = request.POST.get('price_monthly', 0)
         max_capacity = request.POST.get('max_capacity', 20)
         description = request.POST.get('description', '')
         teacher_id = request.POST.get('teacher')
@@ -1283,8 +1285,9 @@ def owner_add_group(request):
             price_per_lesson=(
                 Decimal(price_per_lesson) if price_per_lesson else 0
             ),
-            price_abonement_4=(
-                Decimal(price_abonement_4) if price_abonement_4 else 0
+            lessons_per_month=int(lessons_per_month) if lessons_per_month else 8,
+            price_monthly=(
+                Decimal(price_monthly) if price_monthly else 0
             ),
             max_capacity=int(max_capacity) if max_capacity else 20,
             description=description,
@@ -1308,7 +1311,7 @@ def owner_add_group(request):
             if day and time_str:
                 try:
                     hour, minute = map(int, time_str.split(':'))
-                    start_time_obj = datetime_time(hour, minute)
+                    start_time_obj = time(hour, minute)
                     duration = int(duration_str) if duration_str else 60
                     
                     ScheduleSlot.objects.create(

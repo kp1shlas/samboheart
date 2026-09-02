@@ -184,9 +184,9 @@ class ChildDiscountAdmin(admin.ModelAdmin):
 @admin.register(Group)
 class GroupAdmin(admin.ModelAdmin):
     list_display = ['name', 'teacher', 'price_per_lesson',
-                    'price_abonement_4', 'max_capacity', 'is_active']
+                    'lessons_per_month', 'price_monthly', 'max_capacity', 'is_active']
     list_filter = ['is_active', 'teacher']
-    list_editable = ['is_active', 'price_per_lesson', 'price_abonement_4']
+    list_editable = ['is_active', 'price_per_lesson', 'lessons_per_month', 'price_monthly']
     search_fields = ['name']
 
 
