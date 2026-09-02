@@ -75,10 +75,16 @@ class Group(models.Model):
     )
     max_capacity = models.PositiveIntegerField('Максимум детей', default=20)
     price_per_lesson = models.DecimalField(
-        'Цена за 1 занятие', max_digits=10, decimal_places=2, default=0
+        'Цена за 1 занятие', max_digits=10, decimal_places=2, default=0,
+        help_text='Фиксированная цена, скидки не применяются'
     )
-    price_abonement_4 = models.DecimalField(
-        'Абонемент 4 занятия', max_digits=10, decimal_places=2, default=0
+    lessons_per_month = models.PositiveIntegerField(
+        'Занятий в месяц', default=8,
+        help_text='Количество занятий в месяц (8 или 12)'
+    )
+    price_monthly = models.DecimalField(
+        'Абонемент на месяц', max_digits=10, decimal_places=2, default=0,
+        help_text='Цена абонемента на месяц (может быть со скидкой)'
     )
     is_active = models.BooleanField('Активна', default=True)
     description = models.TextField('Описание', blank=True)
@@ -133,11 +139,11 @@ class ChildDiscount(models.Model):
         ('free', 'Бесплатно'),
     ]
 
-    enrollment = models.ForeignKey(
+    enrollments = models.ManyToManyField(
         ChildEnrollment,
-        on_delete=models.CASCADE,
         related_name='discounts',
-        verbose_name='Запись в группу'
+        verbose_name='Записи в группы',
+        help_text='Выберите одного или нескольких детей'
     )
     discount_type = models.CharField(
         'Тип скидки', max_length=20,
@@ -158,7 +164,8 @@ class ChildDiscount(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
-        return f'{self.enrollment.child.full_name} — {self.get_discount_type_display()}'
+        enrollments_count = self.enrollments.count()
+        return f'{self.get_discount_type_display()} ({enrollments_count} детей) — {self.reason}'
 
     class Meta:
         verbose_name = 'Скидка'

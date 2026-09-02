@@ -349,26 +349,30 @@ def child_detail(request, child_id):
             .order_by('date')
         )
 
-    enrollments_with_prices = []
+        enrollments_with_prices = []
     for enrollment in enrollments:
         group = enrollment.group
+        
+        # Разовое занятие — фиксированная цена (без скидки)
         single_price = calculate_discounted_price(
-            enrollment, group.price_per_lesson
+            enrollment, group.price_per_lesson, is_single_lesson=True
         )
-        abonement_price = calculate_discounted_price(
-            enrollment, group.price_abonement_4
+        
+        # Абонемент на месяц — может быть со скидкой
+        monthly_price = calculate_discounted_price(
+            enrollment, group.price_monthly, is_single_lesson=False
         )
-
-        single_x4 = single_price['discounted_price'] * 4
-        saving = single_x4 - abonement_price['discounted_price']
+        
+        saving = (group.price_per_lesson * group.lessons_per_month) - monthly_price['discounted_price']
         is_free = enrollment.is_free
 
         enrollments_with_prices.append({
             'enrollment': enrollment,
             'single_price': single_price,
-            'abonement_price': abonement_price,
+            'monthly_price': monthly_price,
             'saving': saving if saving > 0 else 0,
             'is_free': is_free,
+            'lessons_per_month': group.lessons_per_month,
         })
 
     debts_count = Attendance.objects.filter(
@@ -422,24 +426,30 @@ def child_dashboard(request):
             .order_by('date')
         )
 
-    enrollments_with_prices = []
+        enrollments_with_prices = []
     for enrollment in enrollments:
         group = enrollment.group
+        
+        # Разовое занятие — фиксированная цена (без скидки)
         single_price = calculate_discounted_price(
-            enrollment, group.price_per_lesson
+            enrollment, group.price_per_lesson, is_single_lesson=True
         )
-        abonement_price = calculate_discounted_price(
-            enrollment, group.price_abonement_4
+        
+        # Абонемент на месяц — может быть со скидкой
+        monthly_price = calculate_discounted_price(
+            enrollment, group.price_monthly, is_single_lesson=False
         )
-        single_x4 = single_price['discounted_price'] * 4
-        saving = single_x4 - abonement_price['discounted_price']
+        
+        saving = (group.price_per_lesson * group.lessons_per_month) - monthly_price['discounted_price']
+        is_free = enrollment.is_free
 
         enrollments_with_prices.append({
             'enrollment': enrollment,
             'single_price': single_price,
-            'abonement_price': abonement_price,
+            'monthly_price': monthly_price,
             'saving': saving if saving > 0 else 0,
-            'is_free': enrollment.is_free,
+            'is_free': is_free,
+            'lessons_per_month': group.lessons_per_month,
         })
 
     debts_count = Attendance.objects.filter(
@@ -505,10 +515,10 @@ def pay_for_enrollment(request, enrollment_id, tariff_code):
         base_price = group.price_per_lesson
         lessons_count = 1
         description = f'Разовое занятие для {child.full_name} ({group.name})'
-    elif tariff_code == 'abonement4':
-        base_price = group.price_abonement_4
-        lessons_count = 4
-        description = f'Абонемент 4 занятия для {child.full_name} ({group.name})'
+    elif tariff_code == 'monthly':
+        base_price = group.price_monthly
+        lessons_count = group.lessons_per_month
+        description = f'Абонемент на месяц для {child.full_name} ({group.name}, {group.lessons_per_month} занятий)'
     else:
         messages.error(request, 'Неверный тариф.')
         return redirect('child_detail', child_id=child.id)

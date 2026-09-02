@@ -164,22 +164,17 @@ class ChildEnrollmentAdmin(admin.ModelAdmin):
 
 @admin.register(ChildDiscount)
 class ChildDiscountAdmin(admin.ModelAdmin):
-    list_display = ['get_child', 'get_group', 'discount_type',
-                    'discount_value', 'reason', 'valid_from',
-                    'valid_until', 'is_active']
+    list_display = ['discount_type', 'discount_value', 'reason',
+                    'valid_from', 'valid_until', 'is_active', 'get_enrollments_count']
     list_filter = ['discount_type', 'is_active']
     list_editable = ['is_active']
-    search_fields = ['enrollment__child__full_name', 'reason']
-    raw_id_fields = ['enrollment']
+    search_fields = ['enrollments__child__full_name', 'reason']
+    filter_horizontal = ['enrollments']
     date_hierarchy = 'valid_from'
 
-    @admin.display(description='Ребёнок')
-    def get_child(self, obj):
-        return obj.enrollment.child.full_name
-
-    @admin.display(description='Группа')
-    def get_group(self, obj):
-        return obj.enrollment.group.name
+    @admin.display(description='Детей')
+    def get_enrollments_count(self, obj):
+        return obj.enrollments.count()
 
 
 # ═══════════════════════════════════════════════════════

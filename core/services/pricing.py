@@ -2,14 +2,14 @@ from decimal import Decimal
 from django.utils import timezone
 from core.models import ChildDiscount
 
-
-def calculate_discounted_price(enrollment, base_price):
+def calculate_discounted_price(enrollment, base_price, is_single_lesson=False):
     """
     Рассчитывает цену со скидкой для записи в группу.
     
     Параметры:
         enrollment: ChildEnrollment
         base_price: Decimal — базовая цена
+        is_single_lesson: bool — если True, скидка не применяется (разовое занятие)
     
     Возвращает: {
         'original_price': Decimal,
@@ -20,9 +20,18 @@ def calculate_discounted_price(enrollment, base_price):
     """
     today = timezone.now().date()
     
+    # Разовое занятие — всегда фиксированная цена
+    if is_single_lesson:
+        return {
+            'original_price': base_price,
+            'discounted_price': base_price,
+            'discount': Decimal('0'),
+            'discount_info': None
+        }
+    
     # Находим активную скидку на сегодня для этой записи
     discount = ChildDiscount.objects.filter(
-        enrollment=enrollment,
+        enrollments=enrollment,
         is_active=True,
         valid_from__lte=today,
         valid_until__gte=today
