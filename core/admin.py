@@ -42,15 +42,113 @@ class ChildEnrollmentInline(admin.TabularInline):
 
 @admin.register(Child)
 class ChildAdmin(admin.ModelAdmin):
-    list_display = ['full_name', 'parent', 'is_active', 'get_groups']
-    list_filter = ['is_active']
-    search_fields = ['full_name', 'parent__user__last_name', 'parent__user__email']
-    inlines = [ChildEnrollmentInline]
+    list_display = ['full_name', 'parent', 'birth_date', 'is_active', 'created_at']
+    list_filter = ['is_active', 'created_at']
+    search_fields = ['full_name', 'user__username', 'parent__user__username']
+    raw_id_fields = ['parent', 'user']
+    readonly_fields = ['created_at']
+    actions = ['import_from_excel', 'export_to_excel']
 
-    @admin.display(description='Группы')
-    def get_groups(self, obj):
-        enrollments = obj.enrollments.filter(is_active=True)
-        return ', '.join([e.group.name for e in enrollments]) or '—'
+    @admin.action(description='📥 Импорт детей из Excel')
+    def import_from_excel(self, request, queryset):
+        from django.shortcuts import render, redirect
+        from django.http import HttpResponseRedirect
+        from django.urls import reverse
+        from .services.import_children import import_children_from_excel, create_excel_template
+        
+        # Если GET — показываем форму загрузки
+        if request.method != 'POST':
+            # Создаём шаблон для скачивания
+            template = create_excel_template()
+            
+            from django.http import HttpResponse
+            response = HttpResponse(
+                template.read(),
+                content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            )
+            response['Content-Disposition'] = 'attachment; filename="children_template.xlsx"'
+            
+            # Сохраняем в сессии флаг, что нужно показать форму после скачивания
+            request.session['show_import_form'] = True
+            return response
+        
+        # Если POST — обрабатываем загруженный файл
+        excel_file = request.FILES.get('excel_file')
+        if not excel_file:
+            self.message_user(request, 'Файл не выбран', level='error')
+            return HttpResponseRedirect(request.get_full_path())
+        
+        # Импортируем
+        result = import_children_from_excel(excel_file)
+        
+        # Формируем сообщение
+        messages = []
+        if result['success'] > 0:
+            messages.append(f'✅ Создано детей: {result["success"]}')
+        if result['skipped'] > 0:
+            messages.append(f'⏭️ Пропущено: {result["skipped"]}')
+        if result['errors']:
+            messages.append(f'❌ Ошибок: {len(result["errors"])}')
+        
+        self.message_user(request, ' | '.join(messages))
+        
+        # Показываем детали
+        if result['children']:
+            details = []
+            for child in result['children'][:5]:  # Показываем первые 5
+                details.append(f"{child['full_name']} (логин: {child['username']}, пароль: {child['password']})")
+            
+            if len(result['children']) > 5:
+                details.append(f"... и ещё {len(result['children']) - 5}")
+            
+            self.message_user(request, '📋 Созданные аккаунты: ' + '; '.join(details))
+        
+        if result['errors']:
+            self.message_user(request, '⚠️ Ошибки: ' + '; '.join(result['errors'][:10]), level='warning')
+        
+        return HttpResponseRedirect(request.get_full_path())
+
+    @admin.action(description='📤 Экспорт детей в Excel')
+    def export_to_excel(self, request, queryset):
+        import openpyxl
+        from django.http import HttpResponse
+        
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = 'Дети'
+        
+        # Заголовки
+        headers = ['ФИО', 'Дата рождения', 'Логин', 'Группы', 'Родитель']
+        ws.append(headers)
+        
+        # Данные
+        for child in queryset:
+            groups = ', '.join([e.group.name for e in child.enrollments.all()])
+            parent_username = child.parent.user.username if child.parent else ''
+            
+            ws.append([
+                child.full_name,
+                child.birth_date.strftime('%d.%m.%Y') if child.birth_date else '',
+                child.user.username if child.user else '',
+                groups,
+                parent_username,
+            ])
+        
+        # Настройка ширины
+        ws.column_dimensions['A'].width = 30
+        ws.column_dimensions['B'].width = 15
+        ws.column_dimensions['C'].width = 20
+        ws.column_dimensions['D'].width = 30
+        ws.column_dimensions['E'].width = 20
+        
+        # Возвращаем файл
+        response = HttpResponse(
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+        response['Content-Disposition'] = 'attachment; filename="children_export.xlsx"'
+        wb.save(response)
+        
+        return response
 
 
 @admin.register(ChildEnrollment)
