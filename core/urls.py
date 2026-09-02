@@ -12,6 +12,7 @@ urlpatterns = [
      path('welcome/', views.welcome_view, name='welcome'),
      path('change-password/', views.change_password, name='change_password'),
      path('oauth/', include('social_django.urls', namespace='social')),
+     path('pricing/', views.pricing_view, name='pricing'),
 
     # ─── Дашборды ──────────────────────────────────────
      path('dashboard/', views.dashboard, name='dashboard'),

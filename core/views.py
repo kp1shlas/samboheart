@@ -194,33 +194,28 @@ def logout_view(request):
 # ═══════════════════════════════════════════════════════
 
 def home_view(request):
-    today = timezone.now().date()
+    """
+    Главная страница:
+    - Авторизованные пользователи → редирект в свой дашборд
+    - Неавторизованные (гости) → страница тарифов
+    """
+    # Если пользователь авторизован — отправляем в его дашборд
+    if request.user.is_authenticated:
+        role = get_user_role(request.user)
+        
+        if role == 'owner':
+            return redirect('owner_dashboard')
+        elif role == 'teacher':
+            return redirect('teacher_dashboard')
+        elif role == 'parent':
+            return redirect('parent_dashboard')
+        elif role == 'child':
+            return redirect('child_dashboard')
+        
+        return redirect('dashboard')
     
-    news = News.objects.filter(is_published=True)[:3]
-    
-    events = Event.objects.filter(
-        is_published=True,
-        date__gte=today,
-    ).order_by('date')[:3]
-    
-    # Ближайшие занятия на 7 дней
-    upcoming_lessons = (
-        Lesson.objects
-        .filter(
-            date__gte=today,
-            date__lte=today + timedelta(days=7),
-            is_cancelled=False,
-            group__is_active=True,
-        )
-        .select_related('group', 'group__teacher')
-        .order_by('date', 'start_time')[:8]
-    )
-    
-    return render(request, 'home.html', {
-        'news': news,
-        'events': events,
-        'upcoming_lessons': upcoming_lessons,
-    })
+    # Неавторизованные — показываем страницу тарифов
+    return render(request, 'pricing.html')
 
 
 @login_required
@@ -1829,3 +1824,11 @@ def owner_import_children(request):
                 )
     
     return render(request, 'owner/import_children.html', context)
+
+# ═══════════════════════════════════════════════════════
+# ПУБЛИЧНАЯ СТРАНИЦА С ТАРИФАМИ (для Точка Банка)
+# ═══════════════════════════════════════════════════════
+
+def pricing_view(request):
+    """Страница с тарифами и ценами (публичная)"""
+    return render(request, 'pricing.html')

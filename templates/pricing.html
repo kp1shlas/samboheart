@@ -1,0 +1,369 @@
+{% extends "base.html" %}
+{% block title %}Тарифы и цены — Сердце Самбо{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto">
+    
+    <!-- Заголовок -->
+    <div class="text-center mb-10">
+        <h1 class="text-3xl font-bold mb-3">🥋 Тарифы и цены</h1>
+        <p class="text-gray-600 text-lg">
+            Детская секция самбо «Сердце Самбо» — г. Ижевск
+        </p>
+        <p class="text-sm text-gray-500 mt-2">
+            📍 МБОУ СОШ №17, ул. Леваневского, 102
+        </p>
+    </div>
+
+    <!-- Карточки тарифов -->
+    <div class="space-y-6">
+
+        <!-- Тариф 1: Гостевая тренировка -->
+        <div class="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
+            <div class="bg-yellow-500 px-6 py-3">
+                <div class="flex items-center justify-between">
+                    <h2 class="text-xl font-bold text-white">🟡 Гостевая тренировка</h2>
+                    <div class="text-right">
+                        <span class="text-3xl font-bold text-white">400 ₽</span>
+                    </div>
+                </div>
+            </div>
+            <div class="p-6">
+                <div class="mb-4">
+                    <p class="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-1">
+                        Для кого
+                    </p>
+                    <p class="text-gray-700">
+                        Дети любого возраста и уровня подготовки
+                    </p>
+                </div>
+
+                <div class="mb-4">
+                    <p class="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-1">
+                        Описание
+                    </p>
+                    <p class="text-gray-700 leading-relaxed">
+                        Идеальный вариант, чтобы попробовать, не покупая абонемент. 
+                        Приходите, если хотите познакомиться с тренером, почувствовать 
+                        атмосферу зала и понять, подходит ли ребёнку именно наш стиль тренировок.
+                    </p>
+                    <p class="text-gray-700 leading-relaxed mt-2">
+                        Это полноценное занятие в группе: разминка, техника и физическая 
+                        подготовка через специализированные упражнения.
+                    </p>
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="bg-gray-50 rounded-lg p-3">
+                        <p class="text-xs font-semibold text-gray-500 uppercase mb-1">
+                            Формат
+                        </p>
+                        <p class="text-gray-700 font-medium">1 занятие</p>
+                        <p class="text-sm text-gray-500">в любой группе по расписанию</p>
+                    </div>
+                    <div class="bg-gray-50 rounded-lg p-3">
+                        <p class="text-xs font-semibold text-gray-500 uppercase mb-1">
+                            Результат
+                        </p>
+                        <p class="text-gray-700 text-sm">
+                            Понимание, подходит ли ребёнку самбо и наша команда
+                        </p>
+                    </div>
+                </div>
+
+                <div class="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800">
+                    💡 С собой — только шорты, футболку и хорошее настроение. 
+                    Всё остальное дадим.
+                </div>
+            </div>
+        </div>
+
+        <!-- Тариф 2: Уверенный старт -->
+        <div class="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
+            <div class="bg-green-500 px-6 py-3">
+                <div class="flex items-center justify-between">
+                    <h2 class="text-xl font-bold text-white">🟢 Уверенный старт</h2>
+                    <div class="text-right">
+                        <span class="text-3xl font-bold text-white">3 000 ₽</span>
+                        <span class="text-white/80 text-sm">/мес</span>
+                    </div>
+                </div>
+            </div>
+            <div class="p-6">
+                <div class="mb-4">
+                    <p class="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-1">
+                        Для кого
+                    </p>
+                    <p class="text-gray-700">
+                        Дети от 5 до 9 лет любого уровня подготовки
+                    </p>
+                </div>
+
+                <div class="mb-4">
+                    <p class="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-1">
+                        Описание
+                    </p>
+                    <p class="text-gray-700 leading-relaxed">
+                        Бережное погружение в мир спорта для самых юных. 
+                        Мы не кричим и не давим — мы играем!
+                    </p>
+                    <p class="text-gray-700 leading-relaxed mt-2">
+                        Через подвижные игры, акробатику и весёлые спарринги 
+                        мы закладываем фундамент на всю жизнь: прямую спину, 
+                        отличную координацию и умение безопасно падать.
+                    </p>
+                </div>
+
+                <div class="grid grid-cols-2 gap-4 mb-4">
+                    <div class="bg-gray-50 rounded-lg p-3">
+                        <p class="text-xs font-semibold text-gray-500 uppercase mb-1">
+                            Формат
+                        </p>
+                        <p class="text-gray-700 font-medium">2 занятия в неделю</p>
+                        <p class="text-sm text-gray-500">в группе сверстников</p>
+                    </div>
+                    <div class="bg-gray-50 rounded-lg p-3">
+                        <p class="text-xs font-semibold text-gray-500 uppercase mb-1">
+                            Цена за занятие
+                        </p>
+                        <p class="text-gray-700 font-medium">~375 ₽</p>
+                        <p class="text-sm text-gray-500">8 занятий в месяц</p>
+                    </div>
+                </div>
+
+                <div class="mb-4">
+                    <p class="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                        Результат
+                    </p>
+                    <ul class="space-y-1 text-sm text-gray-700">
+                        <li class="flex items-start gap-2">
+                            <span class="text-green-500 mt-0.5">✓</span>
+                            Укрепление мышечного корсета, профилактика сколиоза
+                        </li>
+                        <li class="flex items-start gap-2">
+                            <span class="text-green-500 mt-0.5">✓</span>
+                            Выплеск энергии после садика/школы
+                        </li>
+                        <li class="flex items-start gap-2">
+                            <span class="text-green-500 mt-0.5">✓</span>
+                            Умение постоять за себя без драк
+                        </li>
+                        <li class="flex items-start gap-2">
+                            <span class="text-green-500 mt-0.5">✓</span>
+                            Дисциплина через интерес
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- Тариф 3: Путь бойца -->
+        <div class="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
+            <div class="bg-red-500 px-6 py-3">
+                <div class="flex items-center justify-between">
+                    <h2 class="text-xl font-bold text-white">🔴 Путь бойца</h2>
+                    <div class="text-right">
+                        <span class="text-3xl font-bold text-white">3 600 ₽</span>
+                        <span class="text-white/80 text-sm">/мес</span>
+                    </div>
+                </div>
+            </div>
+            <div class="p-6">
+                <div class="mb-4">
+                    <p class="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-1">
+                        Для кого
+                    </p>
+                    <p class="text-gray-700">
+                        Подростки от 10 до 14 лет любого уровня подготовки
+                    </p>
+                </div>
+
+                <div class="mb-4">
+                    <p class="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-1">
+                        Описание
+                    </p>
+                    <p class="text-gray-700 leading-relaxed">
+                        Здесь начинается настоящая работа над характером. 
+                        Это выбор тех, кто уже готов пахать.
+                    </p>
+                    <p class="text-gray-700 leading-relaxed mt-2">
+                        Мы подключаем серьёзную физподготовку (ОФП, работа на быстроту 
+                        и скорость) и активно выходим на ковёр в самбовках.
+                    </p>
+                    <p class="text-gray-700 leading-relaxed mt-2">
+                        Готовимся к соревнованиям, растим внутренний стержень 
+                        и умение идти вперёд. Тренер здесь не аниматор, 
+                        а наставник, который спросит строго и честно.
+                    </p>
+                </div>
+
+                <div class="grid grid-cols-2 gap-4 mb-4">
+                    <div class="bg-gray-50 rounded-lg p-3">
+                        <p class="text-xs font-semibold text-gray-500 uppercase mb-1">
+                            Формат
+                        </p>
+                        <p class="text-gray-700 font-medium">3 занятия в неделю</p>
+                        <p class="text-sm text-gray-500">ОФП и работа в куртках</p>
+                    </div>
+                    <div class="bg-gray-50 rounded-lg p-3">
+                        <p class="text-xs font-semibold text-gray-500 uppercase mb-1">
+                            Цена за занятие
+                        </p>
+                        <p class="text-gray-700 font-medium">~300 ₽</p>
+                        <p class="text-sm text-gray-500">12 занятий в месяц</p>
+                    </div>
+                </div>
+
+                <div class="mb-4">
+                    <p class="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                        Результат
+                    </p>
+                    <ul class="space-y-1 text-sm text-gray-700">
+                        <li class="flex items-start gap-2">
+                            <span class="text-red-500 mt-0.5">✓</span>
+                            Функциональная сила и рельеф
+                        </li>
+                        <li class="flex items-start gap-2">
+                            <span class="text-red-500 mt-0.5">✓</span>
+                            Дисциплина и лидерские качества
+                        </li>
+                        <li class="flex items-start gap-2">
+                            <span class="text-red-500 mt-0.5">✓</span>
+                            Подготовка к городским и выездным стартам
+                        </li>
+                        <li class="flex items-start gap-2">
+                            <span class="text-red-500 mt-0.5">✓</span>
+                            Уважение к сопернику
+                        </li>
+                    </ul>
+                </div>
+
+                <div class="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-800">
+                    💪 Выбор для тех, кто нацелен на результат, победы и стальной характер.
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Сводная таблица -->
+    <div class="mt-10 bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
+        <h2 class="text-xl font-bold mb-4">📊 Сравнение тарифов</h2>
+        
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="border-b border-gray-200">
+                        <th class="text-left py-3 pr-4 font-semibold">Параметр</th>
+                        <th class="text-center py-3 px-2 font-semibold text-yellow-600">🟡 Гостевая</th>
+                        <th class="text-center py-3 px-2 font-semibold text-green-600">🟢 Уверенный старт</th>
+                        <th class="text-center py-3 px-2 font-semibold text-red-600">🔴 Путь бойца</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100">
+                    <tr>
+                        <td class="py-3 pr-4 font-medium">Цена</td>
+                        <td class="py-3 px-2 text-center">400 ₽</td>
+                        <td class="py-3 px-2 text-center font-bold">3 000 ₽/мес</td>
+                        <td class="py-3 px-2 text-center font-bold">3 600 ₽/мес</td>
+                    </tr>
+                    <tr class="bg-gray-50">
+                        <td class="py-3 pr-4 font-medium">Возраст</td>
+                        <td class="py-3 px-2 text-center">Любой</td>
+                        <td class="py-3 px-2 text-center">5–9 лет</td>
+                        <td class="py-3 px-2 text-center">10–14 лет</td>
+                    </tr>
+                    <tr>
+                        <td class="py-3 pr-4 font-medium">Занятий в неделю</td>
+                        <td class="py-3 px-2 text-center">1 (разовое)</td>
+                        <td class="py-3 px-2 text-center">2</td>
+                        <td class="py-3 px-2 text-center">3</td>
+                    </tr>
+                    <tr class="bg-gray-50">
+                        <td class="py-3 pr-4 font-medium">Занятий в месяц</td>
+                        <td class="py-3 px-2 text-center">1</td>
+                        <td class="py-3 px-2 text-center">~8</td>
+                        <td class="py-3 px-2 text-center">~12</td>
+                    </tr>
+                    <tr>
+                        <td class="py-3 pr-4 font-medium">Цена за занятие</td>
+                        <td class="py-3 px-2 text-center">400 ₽</td>
+                        <td class="py-3 px-2 text-center">~375 ₽</td>
+                        <td class="py-3 px-2 text-center">~300 ₽</td>
+                    </tr>
+                    <tr class="bg-gray-50">
+                        <td class="py-3 pr-4 font-medium">Соревнования</td>
+                        <td class="py-3 px-2 text-center">—</td>
+                        <td class="py-3 px-2 text-center">—</td>
+                        <td class="py-3 px-2 text-center">✓</td>
+                    </tr>
+                    <tr>
+                        <td class="py-3 pr-4 font-medium">Самбовки (куртки)</td>
+                        <td class="py-3 px-2 text-center">—</td>
+                        <td class="py-3 px-2 text-center">—</td>
+                        <td class="py-3 px-2 text-center">✓</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Дополнительная информация -->
+    <div class="mt-8 bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
+        <h2 class="text-xl font-bold mb-4">ℹ️ Дополнительная информация</h2>
+        
+        <div class="space-y-4">
+            <div>
+                <h3 class="font-semibold text-gray-700 mb-2">📍 Адрес</h3>
+                <p class="text-gray-600">
+                    г. Ижевск, МБОУ СОШ №17, ул. Леваневского, 102
+                </p>
+            </div>
+            
+            <div>
+                <h3 class="font-semibold text-gray-700 mb-2">💳 Способы оплаты</h3>
+                <p class="text-gray-600">
+                    Онлайн-оплата (карта, СБП), наличные
+                </p>
+            </div>
+            
+            <div>
+                <h3 class="font-semibold text-gray-700 mb-2">🎁 Пробное занятие</h3>
+                <p class="text-gray-600">
+                    Первое занятие — бесплатно! Приходите познакомиться.
+                </p>
+            </div>
+            
+            <div>
+                <h3 class="font-semibold text-gray-700 mb-2">📞 Контакты</h3>
+                <p class="text-gray-600">
+                    Телефон: <a href="tel:+79827964767" class="text-primary hover:underline">+7 (982) 796-47-67</a><br>
+                    Email: <a href="mailto:samooborona17izh@gmail.com" class="text-primary hover:underline">samooborona17izh@gmail.com</a><br>
+                    ВКонтакте: <a href="https://vk.com/sambo_heart" target="_blank" class="text-primary hover:underline">vk.com/sambo_heart</a>
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Призыв к действию -->
+    <div class="mt-8 bg-gradient-to-r from-red-500 to-red-600 rounded-2xl p-8 text-center text-white">
+        <h2 class="text-2xl font-bold mb-3">Запишитесь на пробное занятие!</h2>
+        <p class="text-white/90 mb-5">
+            Первое занятие бесплатно. Приходите познакомиться с тренером и залом.
+        </p>
+        <div class="flex flex-wrap justify-center gap-3">
+            <a href="/register/" 
+               class="bg-white text-primary font-semibold px-6 py-3 rounded-xl hover:bg-gray-100 transition">
+                Записаться онлайн
+            </a>
+            <a href="tel:+79827964767" 
+               class="bg-white/20 text-white font-semibold px-6 py-3 rounded-xl hover:bg-white/30 transition border border-white/40">
+                📞 Позвонить
+            </a>
+            <a href="https://vk.com/sambo_heart" target="_blank"
+               class="bg-white/20 text-white font-semibold px-6 py-3 rounded-xl hover:bg-white/30 transition border border-white/40">
+                💬 Написать в ВК
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}
