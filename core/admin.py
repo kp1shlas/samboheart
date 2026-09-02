@@ -43,17 +43,16 @@ class ChildEnrollmentInline(admin.TabularInline):
 
 @admin.register(Child)
 class ChildAdmin(admin.ModelAdmin):
-    list_display = ['full_name', 'parent', 'birth_date', 'is_active', 'created_at']
-    list_filter = ['is_active', 'created_at']
+    list_display = ['full_name', 'parent', 'birth_date', 'is_active']
+    list_filter = ['is_active']
     search_fields = ['full_name', 'user__username', 'parent__user__username']
     raw_id_fields = ['parent', 'user']
-    readonly_fields = ['created_at']
     actions = ['import_from_excel', 'export_to_excel']
 
     @admin.action(description='📥 Импорт детей из Excel')
     def import_from_excel(self, request, queryset):
         from django.shortcuts import render, redirect
-        from django.http import HttpResponseRedirect
+        from django.http import HttpResponseRedirect, HttpResponse
         from django.urls import reverse
         from .services.import_children import import_children_from_excel, create_excel_template
         
@@ -62,7 +61,6 @@ class ChildAdmin(admin.ModelAdmin):
             # Создаём шаблон для скачивания
             template = create_excel_template()
             
-            from django.http import HttpResponse
             response = HttpResponse(
                 template.read(),
                 content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
@@ -83,15 +81,15 @@ class ChildAdmin(admin.ModelAdmin):
         result = import_children_from_excel(excel_file)
         
         # Формируем сообщение
-        messages = []
+        messages_list = []
         if result['success'] > 0:
-            messages.append(f'✅ Создано детей: {result["success"]}')
+            messages_list.append(f'✅ Создано детей: {result["success"]}')
         if result['skipped'] > 0:
-            messages.append(f'⏭️ Пропущено: {result["skipped"]}')
+            messages_list.append(f'⏭️ Пропущено: {result["skipped"]}')
         if result['errors']:
-            messages.append(f'❌ Ошибок: {len(result["errors"])}')
+            messages_list.append(f'❌ Ошибок: {len(result["errors"])}')
         
-        self.message_user(request, ' | '.join(messages))
+        self.message_user(request, ' | '.join(messages_list))
         
         # Показываем детали
         if result['children']:
@@ -103,29 +101,11 @@ class ChildAdmin(admin.ModelAdmin):
                 details.append(f"... и ещё {len(result['children']) - 5}")
             
             self.message_user(request, '📋 Созданные аккаунты: ' + '; '.join(details))
-            
-            # 🔥 СОХРАНЯЕМ ПАРОЛИ В ФАЙЛ
-            import csv
-            import os
-            from django.conf import settings
-            
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            filename = f'imported_children_{timestamp}.csv'
-            filepath = os.path.join(settings.BASE_DIR, 'media', filename)
-            
-            # Создаём папку media если её нет
-            os.makedirs(os.path.dirname(filepath), exist_ok=True)
-            
-            with open(filepath, 'w', encoding='utf-8-sig', newline='') as f:
-                writer = csv.writer(f, delimiter=';')
-                writer.writerow(['ФИО', 'Логин', 'Пароль'])
-                for child in result['children']:
-                    writer.writerow([child['full_name'], child['username'], child['password']])
-            
-            self.message_user(
-                request,
-                f'💾 Пароли сохранены в файл: media/{filename}'
-            )
+        
+        if result['errors']:
+            self.message_user(request, '⚠️ Ошибки: ' + '; '.join(result['errors'][:10]), level='warning')
+        
+        return HttpResponseRedirect(request.get_full_path())
 
     @admin.action(description='📤 Экспорт детей в Excel')
     def export_to_excel(self, request, queryset):
@@ -168,7 +148,6 @@ class ChildAdmin(admin.ModelAdmin):
         wb.save(response)
         
         return response
-
 
 @admin.register(ChildEnrollment)
 class ChildEnrollmentAdmin(admin.ModelAdmin):

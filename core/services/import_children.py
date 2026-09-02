@@ -9,21 +9,51 @@ from core.models import Child, ParentProfile, Group, ChildEnrollment
 
 
 def generate_username(full_name):
-    """Генерирует логин на основе ФИО"""
-    # Транслитерация
+    """
+    Генерирует логин в формате: фамилия + инициалы имени и отчества
+    Пример: Абдуллаев Туран Туралович -> abdullaev_tt
+    """
     translit = {
         'а': 'a', 'б': 'b', 'в': 'v', 'г': 'g', 'д': 'd', 'е': 'e',
         'ё': 'yo', 'ж': 'zh', 'з': 'z', 'и': 'i', 'й': 'y', 'к': 'k',
         'л': 'l', 'м': 'm', 'н': 'n', 'о': 'o', 'п': 'p', 'р': 'r',
         'с': 's', 'т': 't', 'у': 'u', 'ф': 'f', 'х': 'h', 'ц': 'c',
         'ч': 'ch', 'ш': 'sh', 'щ': 'sch', 'ъ': '', 'ы': 'y', 'ь': '',
-        'э': 'e', 'ю': 'yu', 'я': 'ya', ' ': '_',
+        'э': 'e', 'ю': 'yu', 'я': 'ya',
     }
     
-    username = ''.join(translit.get(c.lower(), c) for c in full_name)
-    username = username.strip('_')
+    def transliterate(text):
+        result = []
+        for char in text.lower():
+            if char in translit:
+                result.append(translit[char])
+            elif char.isalpha() and char.isascii():
+                result.append(char)
+        return ''.join(result)
     
-    # Добавляем случайные цифры если username занят
+    def get_initial(word):
+        if not word:
+            return ''
+        return transliterate(word[0])
+    
+    parts = [p.strip() for p in full_name.split() if p.strip()]
+    
+    if not parts:
+        return 'user'
+    
+    surname = transliterate(parts[0])
+    first_initial = get_initial(parts[1]) if len(parts) > 1 else ''
+    middle_initial = get_initial(parts[2]) if len(parts) > 2 else ''
+    
+    username = surname
+    if first_initial:
+        username += '_' + first_initial
+    if middle_initial:
+        username += middle_initial
+    
+    if not username:
+        username = 'user'
+    
     base_username = username
     counter = 1
     while User.objects.filter(username=username).exists():
@@ -38,20 +68,17 @@ def parse_date(date_value):
     if not date_value:
         return None
     
-    # Если это уже datetime
     if isinstance(date_value, datetime):
         return date_value.date()
     
-    # Если строка
     if isinstance(date_value, str):
         date_value = date_value.strip()
         
-        # Пробуем разные форматы
         formats = [
-            '%d.%m.%Y',  # 15.03.2015
-            '%d-%m-%Y',  # 15-03-2015
-            '%Y-%m-%d',  # 2015-03-15
-            '%d/%m/%Y',  # 15/03/2015
+            '%d.%m.%Y',
+            '%d-%m-%Y',
+            '%Y-%m-%d',
+            '%d/%m/%Y',
         ]
         
         for fmt in formats:
@@ -67,20 +94,13 @@ def import_children_from_excel(file_obj):
     """
     Импортирует детей из Excel-файла
     
-    Ожидаемые колонки:
+    Колонки:
     A: ФИО (обязательно)
     B: Дата рождения (ДД.ММ.ГГГГ)
     C: Логин (опционально)
     D: Пароль (опционально)
     E: Группа (опционально)
     F: Родитель (username, опционально)
-    
-    Returns:
-        dict: {
-            'success': int,
-            'errors': list,
-            'skipped': int,
-        }
     """
     result = {
         'success': 0,
@@ -93,7 +113,6 @@ def import_children_from_excel(file_obj):
         wb = openpyxl.load_workbook(file_obj, data_only=True)
         ws = wb.active
         
-        # Проверяем наличие данных
         rows = list(ws.iter_rows(min_row=2, values_only=True))
         
         if not rows:
@@ -102,7 +121,6 @@ def import_children_from_excel(file_obj):
         
         for row_num, row in enumerate(rows, start=2):
             try:
-                # Извлекаем данные
                 full_name = str(row[0] or '').strip() if row[0] else ''
                 birth_date_raw = row[1] if len(row) > 1 else None
                 username = str(row[2] or '').strip() if len(row) > 2 and row[2] else ''
@@ -110,24 +128,19 @@ def import_children_from_excel(file_obj):
                 group_name = str(row[4] or '').strip() if len(row) > 4 and row[4] else ''
                 parent_username = str(row[5] or '').strip() if len(row) > 5 and row[5] else ''
                 
-                # Проверка обязательных полей
                 if not full_name:
                     result['errors'].append(f'Строка {row_num}: ФИО не указано')
                     result['skipped'] += 1
                     continue
                 
-                # Парсим дату рождения
                 birth_date = parse_date(birth_date_raw)
                 
-                # Генерируем логин если не указан
                 if not username:
                     username = generate_username(full_name)
                 
-                # Генерируем пароль если не указан
                 if not password:
                     password = get_random_string(8)
                 
-                # Проверяем, существует ли пользователь
                 if User.objects.filter(username=username).exists():
                     result['errors'].append(
                         f'Строка {row_num}: Логин "{username}" уже существует (ФИО: {full_name})'
@@ -135,7 +148,6 @@ def import_children_from_excel(file_obj):
                     result['skipped'] += 1
                     continue
                 
-                # Создаём пользователя
                 first_name = full_name.split()[1] if len(full_name.split()) > 1 else ''
                 last_name = full_name.split()[0] if full_name.split() else ''
                 
@@ -146,7 +158,6 @@ def import_children_from_excel(file_obj):
                     last_name=last_name,
                 )
                 
-                # Ищем родителя если указан
                 parent = None
                 if parent_username:
                     try:
@@ -157,7 +168,6 @@ def import_children_from_excel(file_obj):
                             f'Строка {row_num}: Родитель "{parent_username}" не найден (ФИО: {full_name})'
                         )
                 
-                # Создаём ребёнка
                 child = Child.objects.create(
                     user=user,
                     parent=parent,
@@ -166,7 +176,6 @@ def import_children_from_excel(file_obj):
                     is_active=True,
                 )
                 
-                # Записываем в группу если указана
                 if group_name:
                     try:
                         group = Group.objects.get(name__iexact=group_name)
@@ -203,19 +212,13 @@ def import_children_from_excel(file_obj):
 
 
 def create_excel_template():
-    """
-    Создаёт шаблон Excel-файла для скачивания
-    
-    Returns:
-        BytesIO: файл шаблона
-    """
+    """Создаёт шаблон Excel-файла для скачивания"""
     from io import BytesIO
     
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = 'Дети'
     
-    # Заголовки
     headers = [
         'ФИО *',
         'Дата рождения (ДД.ММ.ГГГГ)',
@@ -226,17 +229,15 @@ def create_excel_template():
     ]
     ws.append(headers)
     
-    # Примеры
     examples = [
-        ['Иванов Иван Иванович', '15.03.2015', 'ivanov_ii', '123456', 'Самбо 7-9 лет', 'ivanov_parent'],
-        ['Петрова Анна Сергеевна', '20.05.2016', '', '', 'Самбо 7-9 лет', ''],
-        ['Сидоров Пётр Петрович', '10.09.2014', '', '', '', ''],
+        ['Абдуллаев Туран Туралович', '15.03.2015', '', '', 'Самбо 7-9 лет', ''],
+        ['Иванов Иван Иванович', '20.05.2016', '', '', 'Самбо 10-12 лет', ''],
+        ['Сидорова Анна Сергеевна', '10.09.2014', '', '', '', ''],
     ]
     
     for example in examples:
         ws.append(example)
     
-    # Настройка ширины колонок
     ws.column_dimensions['A'].width = 30
     ws.column_dimensions['B'].width = 25
     ws.column_dimensions['C'].width = 20
@@ -244,7 +245,6 @@ def create_excel_template():
     ws.column_dimensions['E'].width = 20
     ws.column_dimensions['F'].width = 25
     
-    # Сохраняем в BytesIO
     output = BytesIO()
     wb.save(output)
     output.seek(0)
