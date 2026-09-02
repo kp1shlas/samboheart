@@ -1,5 +1,5 @@
 """
-Сервис оплаты через СБП Точка Банк.
+Сервис оплаты через Точка Банк (интернет-эквайринг)
 
 Режимы:
 - mock       — локальная разработка
@@ -9,31 +9,25 @@
 import os
 import uuid
 import requests
-import base64
+import urllib3
 from decimal import Decimal
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
 class TochkaPaymentService:
     def __init__(self):
         self.mode = os.getenv('TOCHKA_MODE', 'mock')
+        self.api_base = 'https://enter.tochka.com/uapi'
         
-        # Базовые URL
-        self.api_urls = {
-            'mock': 'http://localhost',
-            'sandbox': 'https://api.sandbox.tochka.com',
-            'production': 'https://api.tochka.com',
-        }
-        
-        self.api_base = self.api_urls.get(self.mode, self.api_urls['production'])
         self.jwt_token = os.getenv('TOCHKA_JWT_TOKEN', '')
         self.merchant_id = os.getenv('TOCHKA_MERCHANT_ID', '')
-        self.account_id = os.getenv('TOCHKA_ACCOUNT_ID', '')
+        self.customer_code = os.getenv('TOCHKA_CUSTOMER_CODE', '')
         
-        self.success_url = os.getenv('TOCHKA_SUCCESS_URL')
-        self.fail_url = os.getenv('TOCHKA_FAIL_URL')
+        self.success_url = os.getenv('TOCHKA_SUCCESS_URL', 'https://samboheart.ru/payment/success/')
+        self.fail_url = os.getenv('TOCHKA_FAIL_URL', 'https://samboheart.ru/payment/cancel/')
     
     def _headers(self):
-        """Заголовки для запросов к API"""
         return {
             'Authorization': f'Bearer {self.jwt_token}',
             'Content-Type': 'application/json',
@@ -41,40 +35,28 @@ class TochkaPaymentService:
         }
     
     def create_payment_link(self, amount, description, order_id=None):
-        """
-        Создаёт QR-код для оплаты через СБП.
-        
-        Возвращает:
-        {
-            'success': True/False,
-            'qrc_id': '...',
-            'qr_image': 'data:image/png;base64,...',
-            'payload': 'https://qr.nspk.ru/...',
-            'error': '...'
-        }
-        """
+        """Создаёт ссылку на оплату через API интернет-эквайринга"""
         if order_id is None:
-            order_id = str(uuid.uuid4())
+            order_id = str(uuid.uuid4())[:8]
         
         amount = Decimal(amount)
         
-        if self.mode == 'mock':
+        if self.mode == 'mock' or not self.jwt_token:
             return self._create_mock_payment(amount, description, order_id)
         
-        return self._create_sbp_payment(amount, description, order_id)
+        return self._create_real_payment(amount, description, order_id)
     
     def _create_mock_payment(self, amount, description, order_id):
-    # Возвращаем ссылку на нашу страницу mock-оплаты
-    # Payment ID будет передан через сессию
+        """Mock-оплата для локальной разработки"""
         mock_url = 'https://samboheart.ru/payment/mock/'
         return {
-           'success': True,
+            'success': True,
             'url': mock_url,
             'payment_id': f'mock_{order_id}',
         }
     
-    def _create_sbp_payment(self, amount, description, order_id):
-        """Создание реального QR-кода через СБП"""
+    def _create_real_payment(self, amount, description, order_id):
+        """Создание платёжной ссылкики через API интернет-эквайринга"""
         
         if not self.jwt_token:
             return {'success': False, 'error': 'Не указан TOCHKA_JWT_TOKEN'}
@@ -82,16 +64,45 @@ class TochkaPaymentService:
         if not self.merchant_id:
             return {'success': False, 'error': 'Не указан TOCHKA_MERCHANT_ID'}
         
-        if not self.account_id:
-            return {'success': False, 'error': 'Не указан TOCHKA_ACCOUNT_ID'}
+        if not self.customer_code:
+            return {'success': False, 'error': 'Не указан TOCHKA_CUSTOMER_CODE'}
         
-        url = f'{self.api_base}/sbp/v1.0/qr-code/merchant/{self.merchant_id}/account/{self.account_id}'
+        # Транслитерируем описание
+        translit_map = {
+            'а': 'a', 'б': 'b', 'в': 'v', 'г': 'g', 'д': 'd', 'е': 'e',
+            'ё': 'yo', 'ж': 'zh', 'з': 'z', 'и': 'i', 'й': 'y', 'к': 'k',
+            'л': 'l', 'м': 'm', 'н': 'n', 'о': 'o', 'п': 'p', 'р': 'r',
+            'с': 's', 'т': 't', 'у': 'u', 'ф': 'f', 'х': 'h', 'ц': 'c',
+            'ч': 'ch', 'ш': 'sh', 'щ': 'sch', 'ъ': '', 'ы': 'y', 'ь': '',
+            'э': 'e', 'ю': 'yu', 'я': 'ya',
+        }
+        
+        purpose_en = ''
+        for char in description.lower():
+            if char in translit_map:
+                purpose_en += translit_map[char]
+            elif char.isalpha() and char.isascii():
+                purpose_en += char
+            elif char in ' 0123456789.,!?-':
+                purpose_en += char
+        
+        purpose_en = purpose_en[:140]
+        
+        url = f'{self.api_base}/acquiring/v1.0/payments'
         
         payload = {
-            'amount': str(amount),
-            'currency': 'RUB',
-            'comment': description[:100],  # Ограничение длины
-            'qrc_type': 'QRDynamic',
+            'Data': {
+                'customerCode': self.customer_code,
+                'merchantId': self.merchant_id,
+                'amount': float(amount),
+                'currency': 'RUB',
+                'purpose': purpose_en,
+                'paymentMode': ['sbp', 'card'],
+                'redirectUrl': self.success_url,
+                'failRedirectUrl': self.fail_url,
+                'paymentLinkId': order_id,
+                'ttl': 10080,  # 7 дней
+            }
         }
         
         try:
@@ -100,6 +111,7 @@ class TochkaPaymentService:
                 json=payload,
                 headers=self._headers(),
                 timeout=20,
+                verify=False,
             )
         except requests.RequestException as e:
             return {
@@ -110,60 +122,46 @@ class TochkaPaymentService:
         if response.status_code not in [200, 201]:
             return {
                 'success': False,
-                'error': f'Ошибка API: {response.status_code} {response.text}',
+                'error': f'Ошибка API: {response.status_code} {response.text[:500]}',
             }
         
         data = response.json()
+        payment_data = data.get('Data', {})
         
-        qrc_id = data.get('qrc_id')
-        qr_image_base64 = data.get('qr_image')
-        payload_url = data.get('payload')
+        payment_link = payment_data.get('paymentLink')
+        operation_id = payment_data.get('operationId')
         
-        if not qrc_id:
+        if not payment_link:
             return {
                 'success': False,
-                'error': f'API не вернул qrc_id: {data}',
+                'error': f'API не вернул ссылку: {data}',
             }
-        
-        # Формируем data URL для изображения
-        qr_image = None
-        if qr_image_base64:
-            qr_image = f'data:image/png;base64,{qr_image_base64}'
         
         return {
             'success': True,
-            'qrc_id': qrc_id,
-            'qr_image': qr_image,
-            'payload': payload_url,
+            'url': payment_link,
+            'payment_id': operation_id or order_id,
         }
     
-    def check_payment_status(self, qrc_id):
-        """
-        Проверяет статус оплаты по qrc_id.
-        
-        Возвращает:
-        {
-            'success': True/False,
-            'status': 'QR_PAID' / 'QR_NOT_PAID' / 'QR_EXPIRED' / ...,
-            'error': '...'
-        }
-        """
+    def check_payment_status(self, operation_id):
+        """Проверяет статус платежа по operationId"""
         if self.mode == 'mock':
             return {
                 'success': True,
-                'status': 'QR_NOT_PAID',
+                'status': 'APPROVED',
             }
         
         if not self.jwt_token:
             return {'success': False, 'error': 'Не указан TOCHKA_JWT_TOKEN'}
         
-        url = f'{self.api_base}/sbp/v1.0/qr-codes/{qrc_id}/payment-status'
+        url = f'{self.api_base}/acquiring/v1.0/payments/{operation_id}'
         
         try:
             response = requests.get(
                 url,
                 headers=self._headers(),
                 timeout=10,
+                verify=False,
             )
         except requests.RequestException as e:
             return {
@@ -174,22 +172,11 @@ class TochkaPaymentService:
         if response.status_code != 200:
             return {
                 'success': False,
-                'error': f'Ошибка API: {response.status_code} {response.text}',
+                'error': f'Ошибка API: {response.status_code}',
             }
         
         data = response.json()
-        
-        # API возвращает массив статусов
-        qr_statuses = data.get('qr_statuses', [])
-        
-        if not qr_statuses:
-            return {
-                'success': False,
-                'error': f'API не вернул статусы: {data}',
-            }
-        
-        # Берём первый статус (у нас один QR-код)
-        status = qr_statuses[0].get('status', 'UNKNOWN')
+        status = data.get('Data', {}).get('status', 'UNKNOWN')
         
         return {
             'success': True,

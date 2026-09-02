@@ -423,11 +423,10 @@ class Payment(models.Model):
         ('cash', 'Наличные'),
     ]
 
-    qrc_id = models.CharField(
-        'ID QR-кода СБП', max_length=100, blank=True,
-        help_text='Идентификатор QR-кода от Точки'
+    operation_id = models.CharField(
+        'ID операции в банке', max_length=100, blank=True, null=True,
+        help_text='ID платежа в Точка Банке'
     )
-    
 
     parent = models.ForeignKey(
         ParentProfile, on_delete=models.CASCADE,

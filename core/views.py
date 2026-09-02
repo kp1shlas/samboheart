@@ -577,7 +577,7 @@ def pay_for_enrollment(request, enrollment_id, tariff_code):
         )
         return redirect('child_detail', child_id=child.id)
     
-    payment.bank_payment_id = result['payment_id']
+    payment.bank_payment_id = result.get('payment_id', '')
     payment.save()
     request.session['pending_payment_id'] = payment.id
     
