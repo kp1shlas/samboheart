@@ -1743,3 +1743,89 @@ def child_upload_certificate(request):
         'child': child,
         'certificates': certificates,
     })
+
+# ═══════════════════════════════════════════════════════
+# ИМПОРТ ДЕТЕЙ ИЗ EXCEL
+# ═══════════════════════════════════════════════════════
+
+@owner_required
+def owner_import_children(request):
+    """Страница импорта детей из Excel-файла"""
+    from .services.import_children import import_children_from_excel, create_excel_template
+    
+    context = {
+        'result': None,
+    }
+    
+    # Скачивание шаблона
+    if request.GET.get('download_template'):
+        from django.http import HttpResponse
+        template = create_excel_template()
+        response = HttpResponse(
+            template.read(),
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+        response['Content-Disposition'] = 'attachment; filename="children_template.xlsx"'
+        return response
+    
+    # Обработка загруженного файла
+    if request.method == 'POST' and request.FILES.get('excel_file'):
+        excel_file = request.FILES['excel_file']
+        
+        # Проверка расширения
+        if not excel_file.name.endswith(('.xlsx', '.xls')):
+            messages.error(request, '❌ Файл должен быть в формате .xlsx или .xls')
+        else:
+            result = import_children_from_excel(excel_file)
+            context['result'] = result
+            
+            # Сообщения
+            if result['success'] > 0:
+                messages.success(
+                    request,
+                    f'✅ Создано детей: {result["success"]}'
+                )
+            
+            if result['skipped'] > 0:
+                messages.warning(
+                    request,
+                    f'⏭️ Пропущено: {result["skipped"]}'
+                )
+            
+            if result['errors']:
+                for error in result['errors'][:10]:
+                    messages.error(request, f'⚠️ {error}')
+                if len(result['errors']) > 10:
+                    messages.error(
+                        request,
+                        f'... и ещё {len(result["errors"]) - 10} ошибок'
+                    )
+            
+            # Сохраняем пароли в CSV
+            if result['children']:
+                import csv
+                import os
+                from django.conf import settings
+                
+                timestamp = timezone.now().strftime('%Y%m%d_%H%M%S')
+                filename = f'imported_children_{timestamp}.csv'
+                filepath = os.path.join(settings.BASE_DIR, 'media', filename)
+                
+                os.makedirs(os.path.dirname(filepath), exist_ok=True)
+                
+                with open(filepath, 'w', encoding='utf-8-sig', newline='') as f:
+                    writer = csv.writer(f, delimiter=';')
+                    writer.writerow(['ФИО', 'Логин', 'Пароль'])
+                    for child in result['children']:
+                        writer.writerow([
+                            child['full_name'],
+                            child['username'],
+                            child['password']
+                        ])
+                
+                messages.info(
+                    request,
+                    f'💾 Пароли сохранены: media/{filename}'
+                )
+    
+    return render(request, 'owner/import_children.html', context)

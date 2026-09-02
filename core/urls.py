@@ -56,6 +56,8 @@ urlpatterns = [
      path('owner/groups/add/', views.owner_add_group, name='owner_add_group'),
      path('owner/generate-lessons/',
         views.owner_generate_lessons, name='owner_generate_lessons'),
+     path('owner/import-children/',
+         views.owner_import_children, name='owner_import_children'),
 
     # ─── Новости и события ─────────────────────────────
      path('news/', views.news_list, name='news_list'),
