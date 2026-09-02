@@ -1,5 +1,6 @@
 from django.contrib import admin
 from django.utils import timezone
+from datetime import datetime
 from .models import (
     ParentProfile, TeacherProfile, Child, Group,
     Lesson, Attendance, Certificate, ScheduleSlot,
@@ -95,18 +96,36 @@ class ChildAdmin(admin.ModelAdmin):
         # Показываем детали
         if result['children']:
             details = []
-            for child in result['children'][:5]:  # Показываем первые 5
+            for child in result['children'][:5]:
                 details.append(f"{child['full_name']} (логин: {child['username']}, пароль: {child['password']})")
             
             if len(result['children']) > 5:
                 details.append(f"... и ещё {len(result['children']) - 5}")
             
             self.message_user(request, '📋 Созданные аккаунты: ' + '; '.join(details))
-        
-        if result['errors']:
-            self.message_user(request, '⚠️ Ошибки: ' + '; '.join(result['errors'][:10]), level='warning')
-        
-        return HttpResponseRedirect(request.get_full_path())
+            
+            # 🔥 СОХРАНЯЕМ ПАРОЛИ В ФАЙЛ
+            import csv
+            import os
+            from django.conf import settings
+            
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            filename = f'imported_children_{timestamp}.csv'
+            filepath = os.path.join(settings.BASE_DIR, 'media', filename)
+            
+            # Создаём папку media если её нет
+            os.makedirs(os.path.dirname(filepath), exist_ok=True)
+            
+            with open(filepath, 'w', encoding='utf-8-sig', newline='') as f:
+                writer = csv.writer(f, delimiter=';')
+                writer.writerow(['ФИО', 'Логин', 'Пароль'])
+                for child in result['children']:
+                    writer.writerow([child['full_name'], child['username'], child['password']])
+            
+            self.message_user(
+                request,
+                f'💾 Пароли сохранены в файл: media/{filename}'
+            )
 
     @admin.action(description='📤 Экспорт детей в Excel')
     def export_to_excel(self, request, queryset):
