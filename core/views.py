@@ -309,15 +309,6 @@ def parent_dashboard(request):
 
 @login_required
 def child_detail(request, child_id):
-    
-    if hasattr(request.user, 'child_profile'):
-        if request.user.child_profile.id == child_id:
-            return child_dashboard(request)
-        else:
-            messages.error(request, 'Нет доступа к этому профилю.')
-            return redirect('child_dashboard')
-    
-        
     profile = get_parent_profile(request.user)
     child = get_object_or_404(Child, id=child_id, parent=profile)
 
@@ -350,7 +341,8 @@ def child_detail(request, child_id):
             .order_by('date')
         )
 
-        enrollments_with_prices = []
+    # Ближайшие занятия для каждой группы
+    enrollments_with_prices = []
     for enrollment in enrollments:
         group = enrollment.group
         
@@ -367,6 +359,17 @@ def child_detail(request, child_id):
         saving = (group.price_per_lesson * group.lessons_per_month) - monthly_price['discounted_price']
         is_free = enrollment.is_free
 
+        # Ближайшие 3 занятия этой группы
+        upcoming_lessons = (
+            Lesson.objects
+            .filter(
+                group=group,
+                date__gte=today,
+                is_cancelled=False,
+            )
+            .order_by('date', 'start_time')[:3]
+        )
+
         enrollments_with_prices.append({
             'enrollment': enrollment,
             'single_price': single_price,
@@ -374,6 +377,7 @@ def child_detail(request, child_id):
             'saving': saving if saving > 0 else 0,
             'is_free': is_free,
             'lessons_per_month': group.lessons_per_month,
+            'upcoming_lessons': upcoming_lessons,
         })
 
     debts_count = Attendance.objects.filter(
@@ -427,7 +431,8 @@ def child_dashboard(request):
             .order_by('date')
         )
 
-        enrollments_with_prices = []
+    # Ближайшие занятия для каждой группы
+    enrollments_with_prices = []
     for enrollment in enrollments:
         group = enrollment.group
         
@@ -444,6 +449,17 @@ def child_dashboard(request):
         saving = (group.price_per_lesson * group.lessons_per_month) - monthly_price['discounted_price']
         is_free = enrollment.is_free
 
+        # Ближайшие 3 занятия этой группы
+        upcoming_lessons = (
+            Lesson.objects
+            .filter(
+                group=group,
+                date__gte=today,
+                is_cancelled=False,
+            )
+            .order_by('date', 'start_time')[:3]
+        )
+
         enrollments_with_prices.append({
             'enrollment': enrollment,
             'single_price': single_price,
@@ -451,6 +467,7 @@ def child_dashboard(request):
             'saving': saving if saving > 0 else 0,
             'is_free': is_free,
             'lessons_per_month': group.lessons_per_month,
+            'upcoming_lessons': upcoming_lessons,
         })
 
     debts_count = Attendance.objects.filter(
@@ -465,7 +482,6 @@ def child_dashboard(request):
         'debts_count': debts_count,
         'is_child_view': True,
     })
-
 
 # ═══════════════════════════════════════════════════════
 # ОПЛАТА
@@ -1004,7 +1020,7 @@ def owner_dashboard(request):
 
     # Подзапрос для бесплатных скидок
     free_discount_exists = ChildDiscount.objects.filter(
-        enrollment=OuterRef('pk'),
+        enrollments=OuterRef('pk'),
         is_active=True,
         discount_type='free',
         valid_from__lte=today,
@@ -1095,7 +1111,7 @@ def owner_report(request):
     )
 
     free_discount_exists = ChildDiscount.objects.filter(
-        enrollment=OuterRef('pk'),
+        enrollments=OuterRef('pk'),
         is_active=True,
         discount_type='free',
         valid_from__lte=today,
