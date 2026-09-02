@@ -265,7 +265,6 @@ def welcome_view(request):
 # ═══════════════════════════════════════════════════════
 # РОДИТЕЛЬ
 # ═══════════════════════════════════════════════════════
-
 @login_required
 def parent_dashboard(request):
 
@@ -301,11 +300,43 @@ def parent_dashboard(request):
             .order_by('date')
         )
 
+    # 🔥 НОВОЕ: Ближайшие занятия всех детей родителя (на 7 дней)
+    upcoming_lessons = []
+    if group_ids:
+        week_ahead = today + timedelta(days=7)
+        lessons_qs = (
+            Lesson.objects
+            .filter(
+                group__id__in=group_ids,
+                is_cancelled=False,
+                date__gte=today,
+                date__lte=week_ahead,
+            )
+            .select_related('group', 'group__teacher')
+            .order_by('date', 'start_time')
+        )
+        
+        # Для каждого занятия определяем, кто из детей ходит
+        for lesson in lessons_qs:
+            # Находим детей родителя в этой группе
+            children_in_group = [
+                c for c in children
+                if any(
+                    e.group_id == lesson.group_id and e.is_active
+                    for e in c.enrollments.all()
+                )
+            ]
+            
+            upcoming_lessons.append({
+                'lesson': lesson,
+                'children': children_in_group,
+            })
+
     return render(request, 'parent_dashboard.html', {
         'children': children,
         'cancelled_notifications': cancelled_notifications,
+        'upcoming_lessons': upcoming_lessons,
     })
-
 
 @login_required
 def child_detail(request, child_id):

@@ -50,7 +50,12 @@
             {% endif %}
         </div>
         <p class="text-sm text-gray-500">
-            Преподаватель: {{ group.teacher|default:"—" }}
+            Преподаватель: 
+    {% if group.teacher %}
+        {{ group.teacher.specialization|default:"Самбо" }}
+    {% else %}
+        —
+    {% endif %}
         </p>
         <p class="text-sm text-gray-500">
             Детей: {{ group.children_count }} / {{ group.max_capacity }}

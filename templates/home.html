@@ -67,8 +67,8 @@
                 </p>
                 {% if lesson.group.teacher %}
                 <p class="text-xs text-gray-500">
-                    👤 {{ lesson.group.teacher.user.get_full_name|default:lesson.group.teacher.user.username }}
-                </p>
+    👤 {{ lesson.group.teacher.specialization|default:"Самбо" }}
+</p>
                 {% endif %}
             </div>
         </div>
