@@ -536,26 +536,33 @@ def pay_for_enrollment(request, enrollment_id, tariff_code):
     child = enrollment.child
     group = enrollment.group
     
+        # Получаем запись
+    enrollment = get_object_or_404(
+        ChildEnrollment,
+        id=enrollment_id,
+        is_active=True,
+    )
+    child = enrollment.child
+
     # Определяем профиль плательщика
     profile = None
-    
-    # Это родитель ребёнка?
+
+    # Это родитель?
     if hasattr(request.user, 'parent_profile'):
         if child.parent == request.user.parent_profile:
             profile = request.user.parent_profile
-    
+
     # Это сам ребёнок?
     if profile is None and hasattr(request.user, 'child_profile'):
         if request.user.child_profile == child:
+            # 🔥 ИСПРАВЛЕНИЕ: если у ребёнка нет родителя, оставляем parent=None
             if child.parent:
                 profile = child.parent
             else:
-                profile, _ = ParentProfile.objects.get_or_create(
-                    user=request.user
-                )
-    
-    if profile is None:
-        messages.error(request, 'Нет доступа к оплате этой группы.')
+                profile = None  # Платёж будет без родителя
+
+    if profile is None and not hasattr(request.user, 'child_profile'):
+        messages.error(request, 'Нет доступа к оплате.')
         return redirect('dashboard')
     
     # Определяем тариф
@@ -829,20 +836,34 @@ def payment_mock_confirm(request):
 
 @login_required
 def payment_history(request):
-    """История платежей родителя с фильтрами"""
-    profile = get_parent_profile(request.user)
+    """История платежей — для родителя и ребёнка"""
+    
+    # Определяем, кто смотрит историю
+    is_child = hasattr(request.user, 'child_profile')
     
     # Фильтры из GET-параметров
     status = request.GET.get('status', 'all')
     period = request.GET.get('period', 'all')
     
-    # Базовый запрос
-    payments = (
-        Payment.objects
-        .filter(parent=profile)
-        .select_related('child', 'enrollment__group', 'event_registration__event')
-        .order_by('-created_at')
-    )
+    # Базовый запрос — зависит от роли
+    if is_child:
+        # Для ребёнка — показываем платежи его child_profile
+        child = request.user.child_profile
+        payments = (
+            Payment.objects
+            .filter(child=child)
+            .select_related('child', 'enrollment__group', 'event_registration__event', 'parent')
+            .order_by('-created_at')
+        )
+    else:
+        # Для родителя — показываем платежи по parent_profile
+        profile = get_parent_profile(request.user)
+        payments = (
+            Payment.objects
+            .filter(parent=profile)
+            .select_related('child', 'enrollment__group', 'event_registration__event')
+            .order_by('-created_at')
+        )
     
     # Фильтр по статусу
     if status != 'all':
@@ -860,8 +881,14 @@ def payment_history(request):
         first_of_year = today.replace(month=1, day=1)
         payments = payments.filter(created_at__date__gte=first_of_year)
     
-    # Статистика
-    all_payments = Payment.objects.filter(parent=profile)
+    # Статистика — тоже зависит от роли
+    if is_child:
+        child = request.user.child_profile
+        all_payments = Payment.objects.filter(child=child)
+    else:
+        profile = get_parent_profile(request.user)
+        all_payments = Payment.objects.filter(parent=profile)
+    
     total_paid = all_payments.filter(status='paid').aggregate(
         total=Sum('amount')
     )['total'] or 0
@@ -879,8 +906,8 @@ def payment_history(request):
         'period_total': period_total,
         'current_status': status,
         'current_period': period,
+        'is_child': is_child,
     })
-
 # ═══════════════════════════════════════════════════════
 # ПРЕПОДАВАТЕЛЬ
 # ═══════════════════════════════════════════════════════
@@ -1204,12 +1231,7 @@ def owner_cash_payment(request):
         group = enrollment.group
         parent = child.parent
 
-        if not parent:
-            messages.error(
-                request,
-                'У ребёнка не назначен родитель. Платёж не может быть создан.'
-            )
-            return redirect('owner_cash_payment')
+        
 
         if tariff == '1':
             amount = group.price_per_lesson

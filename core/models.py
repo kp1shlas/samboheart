@@ -429,7 +429,8 @@ class Payment(models.Model):
     )
 
     parent = models.ForeignKey(
-        ParentProfile, on_delete=models.CASCADE,
+        ParentProfile, on_delete=models.SET_NULL,
+        null=True, blank=True,
         related_name='payments',
         verbose_name='Родитель'
     )
