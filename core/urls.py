@@ -21,6 +21,8 @@ urlpatterns = [
      path('child/<int:child_id>/', views.child_detail, name='child_detail'),
      path('teacher/', views.teacher_dashboard, name='teacher_dashboard'),
      path('child/certificate/upload/', views.child_upload_certificate, name='child_upload_certificate'),
+     path('parent/certificate/upload/',
+         views.parent_upload_certificate, name='parent_upload_certificate'),
 
     # ─── Преподаватель: занятия ────────────────────────
      path('teacher/group/<int:group_id>/lessons/',

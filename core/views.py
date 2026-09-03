@@ -1821,6 +1821,92 @@ def child_upload_certificate(request):
         'certificates': certificates,
     })
 
+@login_required
+def parent_upload_certificate(request):
+    """Загрузка справки родителем с выбором ребёнка"""
+    # Проверяем, что это родитель
+    if not hasattr(request.user, 'parent_profile'):
+        messages.error(request, 'Доступ только для родителей.')
+        return redirect('dashboard')
+    
+    profile = request.user.parent_profile
+    children = profile.children.filter(is_active=True)
+    
+    if not children.exists():
+        messages.warning(request, 'У вас нет детей для загрузки справки.')
+        return redirect('parent_dashboard')
+    
+    if request.method == 'POST':
+        child_id = request.POST.get('child_id')
+        file = request.FILES.get('file')
+        date_from = request.POST.get('date_from')
+        date_to = request.POST.get('date_to')
+        reason = request.POST.get('reason', '')
+        
+        if not child_id:
+            messages.error(request, 'Выберите ребёнка.')
+            return render(request, 'parent_upload_certificate.html', {
+                'children': children,
+            })
+        
+        child = get_object_or_404(Child, id=child_id, parent=profile)
+        
+        if not file:
+            messages.error(request, 'Выберите файл справки.')
+            return render(request, 'parent_upload_certificate.html', {
+                'children': children,
+            })
+        
+        if not date_from or not date_to:
+            messages.error(request, 'Укажите период действия справки.')
+            return render(request, 'parent_upload_certificate.html', {
+                'children': children,
+            })
+        
+        # Проверка расширения
+        allowed_ext = ['.pdf', '.jpg', '.jpeg', '.png', '.heic']
+        ext = os.path.splitext(file.name)[1].lower()
+        if ext not in allowed_ext:
+            messages.error(
+                request,
+                f'Недопустимый формат файла. Разрешены: {", ".join(allowed_ext)}'
+            )
+            return render(request, 'parent_upload_certificate.html', {
+                'children': children,
+            })
+        
+        # Проверка размера (не более 10 МБ)
+        if file.size > 10 * 1024 * 1024:
+            messages.error(request, 'Файл слишком большой. Максимум 10 МБ.')
+            return render(request, 'parent_upload_certificate.html', {
+                'children': children,
+            })
+        
+        Certificate.objects.create(
+            child=child,
+            file=file,
+            date_from=date_from,
+            date_to=date_to,
+            reason=reason,
+            status='pending',
+        )
+        
+        messages.success(
+            request,
+            f'✅ Справка для {child.full_name} загружена! '
+            f'Владелец проверит её в ближайшее время.'
+        )
+        return redirect('child_detail', child_id=child.id)
+    
+    # Список уже загруженных справок для всех детей
+    certificates = Certificate.objects.filter(
+        child__parent=profile
+    ).select_related('child').order_by('-uploaded_at')
+    
+    return render(request, 'parent_upload_certificate.html', {
+        'children': children,
+        'certificates': certificates,
+    })
 # ═══════════════════════════════════════════════════════
 # ИМПОРТ ДЕТЕЙ ИЗ EXCEL
 # ═══════════════════════════════════════════════════════

@@ -24,63 +24,15 @@
     </div>
 </div>
 {% endif %}
-{# Блок ближайших занятий #}
-{% if upcoming_lessons %}
-<div class="mb-8">
-    <div class="flex items-center justify-between mb-4">
-        <h2 class="text-xl font-bold">📅 Ближайшие занятия</h2>
-        <span class="text-sm text-gray-500">на 7 дней</span>
-    </div>
-    
-    <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {% for item in upcoming_lessons %}
-        <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-4 hover:shadow-md transition">
-            <div class="flex items-center gap-3 mb-3">
-                <div class="w-12 h-12 rounded-xl bg-red-50 border border-red-100
-                            flex flex-col items-center justify-center flex-shrink-0">
-                    <span class="text-base font-bold text-primary leading-none">
-                        {{ item.lesson.date|date:"d" }}
-                    </span>
-                    <span class="text-[9px] text-red-400 uppercase">
-                        {{ item.lesson.date|date:"M" }}
-                    </span>
-                </div>
-                <div class="min-w-0">
-                    <p class="font-semibold text-gray-800 text-sm">
-                        {{ item.lesson.date|date:"l" }}
-                    </p>
-                    <p class="text-xs text-gray-500">
-                        🕐 {{ item.lesson.start_time|time:"H:i" }}
-                    </p>
-                </div>
-            </div>
-            
-            <div class="pt-3 border-t border-gray-100">
-                <p class="font-medium text-gray-800 text-sm mb-1">
-                    🥋 {{ item.lesson.group.name }}
-                </p>
-                {% if item.lesson.group.teacher %}
-                <p class="text-xs text-gray-500 mb-2">
-                    👤 {{ item.lesson.group.teacher.specialization|default:"Самбо" }}
-                </p>
-                {% endif %}
-                
-                {% if item.children %}
-                <div class="flex flex-wrap gap-1">
-                    {% for child in item.children %}
-                    <span class="inline-flex items-center px-2 py-0.5 bg-blue-50
-                                 text-blue-700 rounded text-xs">
-                        👶 {{ child.full_name.split.0 }}
-                    </span>
-                    {% endfor %}
-                </div>
-                {% endif %}
-            </div>
-        </div>
-        {% endfor %}
-    </div>
+
+{# Общая кнопка перерасчёта #}
+<div class="flex justify-end mb-4">
+    <a href="{% url 'parent_upload_certificate' %}"
+       class="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700
+              text-white font-medium px-5 py-2.5 rounded-xl transition text-sm">
+        🔄 Сделать перерасчёт
+    </a>
 </div>
-{% endif %}
 {% if children %}
 <div class="space-y-6">
     {% for child in children %}
@@ -146,7 +98,63 @@
     </div>
     {% endfor %}
 </div>
-
+{# Блок ближайших занятий #}
+{% if upcoming_lessons %}
+<div class="mb-8">
+    <div class="flex items-center justify-between mb-4">
+        <h2 class="text-xl font-bold">📅 Ближайшие занятия</h2>
+        <span class="text-sm text-gray-500">на 7 дней</span>
+    </div>
+    
+    <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {% for item in upcoming_lessons %}
+        <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-4 hover:shadow-md transition">
+            <div class="flex items-center gap-3 mb-3">
+                <div class="w-12 h-12 rounded-xl bg-red-50 border border-red-100
+                            flex flex-col items-center justify-center flex-shrink-0">
+                    <span class="text-base font-bold text-primary leading-none">
+                        {{ item.lesson.date|date:"d" }}
+                    </span>
+                    <span class="text-[9px] text-red-400 uppercase">
+                        {{ item.lesson.date|date:"M" }}
+                    </span>
+                </div>
+                <div class="min-w-0">
+                    <p class="font-semibold text-gray-800 text-sm">
+                        {{ item.lesson.date|date:"l" }}
+                    </p>
+                    <p class="text-xs text-gray-500">
+                        🕐 {{ item.lesson.start_time|time:"H:i" }}
+                    </p>
+                </div>
+            </div>
+            
+            <div class="pt-3 border-t border-gray-100">
+                <p class="font-medium text-gray-800 text-sm mb-1">
+                    🥋 {{ item.lesson.group.name }}
+                </p>
+                {% if item.lesson.group.teacher %}
+                <p class="text-xs text-gray-500 mb-2">
+                    👤 {{ item.lesson.group.teacher.specialization|default:"Самбо" }}
+                </p>
+                {% endif %}
+                
+                {% if item.children %}
+                <div class="flex flex-wrap gap-1">
+                    {% for child in item.children %}
+                    <span class="inline-flex items-center px-2 py-0.5 bg-blue-50
+                                 text-blue-700 rounded text-xs">
+                        👶 {{ child.full_name.split.0 }}
+                    </span>
+                    {% endfor %}
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
 <div class="mt-6 bg-blue-50 border border-blue-200 rounded-xl p-5">
     <div class="flex items-center justify-between flex-wrap gap-4">
         <div>

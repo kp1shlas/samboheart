@@ -3,17 +3,24 @@
 
 {% block content %}
 {% if not is_child_view %}
-<div class="mb-6">
-    <a href="/dashboard/" class="text-sm text-accent hover:underline">← Назад к детям</a>
+{# Кнопка для родителя #}
+<div class="mb-6 flex gap-3">
+    <a href="/dashboard/" class="text-sm text-accent hover:underline">
+        ← Назад к детям
+    </a>
+    <a href="{% url 'parent_upload_certificate' %}"
+       class="ml-auto inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700
+              text-white font-medium px-4 py-2 rounded-lg transition text-sm">
+        🔄 Сделать перерасчёт
+    </a>
 </div>
-{% endif %}
-<!-- Кнопка загрузки справки (для ребёнка) -->
-{% if is_child_view %}
+{% else %}
+{# Кнопка для ребёнка #}
 <div class="mb-6">
     <a href="{% url 'child_upload_certificate' %}"
        class="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700
-              text-white font-medium px-5 py-2.5 rounded-xl transition">
-        📄 Загрузить справку
+              text-white font-medium px-4 py-2 rounded-lg transition text-sm">
+        🔄 Сделать перерасчёт
     </a>
 </div>
 {% endif %}
