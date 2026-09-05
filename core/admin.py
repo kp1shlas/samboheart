@@ -403,3 +403,12 @@ class PaymentAdmin(admin.ModelAdmin):
         if obj.enrollment:
             return obj.enrollment.group.name
         return '—'
+    def save_model(self, request, obj, form, change):
+        # Проверяем, что статус только что сменился на 'paid'
+        is_newly_paid = (obj.status == 'paid') and (not change or form.initial.get('status') != 'paid')
+        
+        super().save_model(request, obj, form, change)
+        
+        if is_newly_paid and not obj.event_registration:
+            from core.services.debts import settle_debts_on_payment
+            settle_debts_on_payment(obj)
