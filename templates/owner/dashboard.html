@@ -108,7 +108,11 @@
     </p>
     <p class="text-lg font-bold text-blue-900">
         {{ last_payment.amount|floatformat:0 }} ₽
-        от {{ last_payment.parent.user.get_full_name|default:last_payment.parent.user.username }}
+        {% if last_payment.parent %}
+    от {{ last_payment.parent.user.get_full_name|default:last_payment.parent.user.username }}
+{% else %}
+    от <span class="text-gray-500">—</span>
+{% endif %}
     </p>
     <p class="text-sm text-blue-600">
         {{ last_payment.paid_at|date:"d.m.Y H:i" }} ·
@@ -135,7 +139,13 @@
             {% for p in monthly_payments %}
             <tr class="hover:bg-gray-50">
                 <td class="px-4 py-3">{{ p.paid_at|date:"d.m.Y" }}</td>
-                <td class="px-4 py-3">{{ p.parent }}</td>
+                <td class="px-4 py-3">
+    {% if p.parent %}
+        {{ p.parent.user.get_full_name|default:p.parent.user.username }}
+    {% else %}
+        <span class="text-gray-400">—</span>
+    {% endif %}
+</td>
                 <td class="px-4 py-3">{{ p.child.full_name }}</td>
                 <td class="px-4 py-3">{{ p.get_method_display }}</td>
                 <td class="px-4 py-3 text-right font-semibold text-green-600">

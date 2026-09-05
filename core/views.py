@@ -1170,6 +1170,21 @@ def owner_dashboard(request):
         .filter(status='paid')
         .aggregate(total=Sum('amount'))['total'] or Decimal('0')
     )
+    monthly_payments = (
+        Payment.objects
+        .filter(status='paid', paid_at__date__gte=first_of_month)
+        .select_related('child', 'parent__user', 'enrollment__group')
+        .order_by('-paid_at')[:10]
+    )
+    
+    # Последний платёж (для блока сверху)
+    last_payment = (
+        Payment.objects
+        .filter(status='paid')
+        .select_related('child', 'parent__user')
+        .order_by('-paid_at')
+        .first()
+    )
 
     return render(request, 'owner/dashboard.html', {
         'total_children': total_children,
@@ -1178,6 +1193,9 @@ def owner_dashboard(request):
         'monthly_income': monthly_income,
         'last_month_income': last_month_income,
         'all_time_income': all_time_income,
+        # 🔥 НОВОЕ:
+        'monthly_payments': monthly_payments,
+        'last_payment': last_payment,
     })
 
 
