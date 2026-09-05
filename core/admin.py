@@ -46,7 +46,8 @@ class ChildEnrollmentInline(admin.TabularInline):
     verbose_name = 'Запись в группу'
     verbose_name_plural = 'Записи в группы'
 
-# --- Новые Inline-таблицы для карточки ребёнка ---
+# --- Inline-таблицы для карточки ребёнка ---
+# (Обрати внимание: LoginHistoryInline удален, так как он привязан к User, а не к Child)
 
 class AttendanceInline(admin.TabularInline):
     model = Attendance
@@ -54,7 +55,7 @@ class AttendanceInline(admin.TabularInline):
     fields = ['lesson', 'status', 'was_deducted', 'is_debt']
     readonly_fields = ['lesson', 'was_deducted', 'is_debt']
     can_delete = False
-    max_num = 15  # Показываем последние 15 записей посещаемости
+    max_num = 15
     verbose_name = 'Запись посещаемости'
     verbose_name_plural = 'Посещаемость'
     ordering = ['-lesson__date']
@@ -84,18 +85,6 @@ class CertificateInline(admin.TabularInline):
     ordering = ['-uploaded_at']
 
 
-class LoginHistoryInline(admin.TabularInline):
-    model = LoginHistory
-    extra = 0
-    fields = ['timestamp', 'ip_address']
-    readonly_fields = ['timestamp', 'ip_address']
-    can_delete = False
-    max_num = 5  # Только последние 5 входов
-    verbose_name = 'Вход в систему'
-    verbose_name_plural = 'История входов'
-    ordering = ['-timestamp']
-
-
 @admin.register(Child)
 class ChildAdmin(admin.ModelAdmin):
     list_display = ['full_name', 'parent', 'birth_date', 'is_active', 'get_last_login_info']
@@ -104,26 +93,28 @@ class ChildAdmin(admin.ModelAdmin):
     raw_id_fields = ['parent', 'user']
     actions = ['import_from_excel', 'export_to_excel']
 
-    # Подключаем все Inline-таблицы
     inlines = [
-        ChildEnrollmentInline,   # Уже был определён выше в твоём коде
+        ChildEnrollmentInline,
         AttendanceInline,
         PaymentInline,
         CertificateInline,
-        LoginHistoryInline,
+        # LoginHistoryInline удален отсюда
     ]
 
-    # Новые поля только для чтения
-    readonly_fields = ['get_current_session', 'get_last_login_info', 'change_password_link']
+    readonly_fields = [
+        'get_current_session', 
+        'get_login_history_list', # Новое поле вместо инлайна
+        'get_last_login_info', 
+        'change_password_link'
+    ]
 
-    # Группируем поля в секции для удобства
     fieldsets = (
         (None, {
             'fields': ('full_name', 'birth_date', 'parent', 'user', 'is_active')
         }),
         ('🔐 Безопасность и сессии', {
-            'fields': ('get_current_session', 'get_last_login_info', 'change_password_link'),
-            'classes': ('collapse',)  # Сворачиваемая секция
+            'fields': ('get_last_login_info', 'get_login_history_list', 'get_current_session', 'change_password_link'),
+            'classes': ('collapse',)
         }),
     )
 
@@ -137,8 +128,25 @@ class ChildAdmin(admin.ModelAdmin):
         
         info = f"Вход: {last_login_str}"
         if last_history:
-            info += f" | IP: {last_history.ip_address}"
+            info += f" | IP: {last_history.ip_address or 'Неизвестен'}"
         return info
+
+    @admin.display(description='История входов (последние 5)')
+    def get_login_history_list(self, obj):
+        if not obj.user:
+            return "Нет аккаунта"
+        
+        histories = LoginHistory.objects.filter(user=obj.user).order_by('-timestamp')[:5]
+        if not histories:
+            return "История пуста"
+        
+        html_list = "<ul style='margin: 0; padding-left: 20px; color: #555;'>"
+        for h in histories:
+            ip = h.ip_address or 'Неизвестен'
+            time_str = h.timestamp.strftime('%d.%m.%Y %H:%M')
+            html_list += f"<li style='margin-bottom: 4px;'><strong>{time_str}</strong> — IP: {ip}</li>"
+        html_list += "</ul>"
+        return format_html(html_list)
 
     @admin.display(description='Активные сессии')
     def get_current_session(self, obj):
@@ -157,20 +165,17 @@ class ChildAdmin(admin.ModelAdmin):
     def change_password_link(self, obj):
         if not obj.user:
             return "Нет аккаунта"
-        # Ссылка на стандартную страницу смены пароля Django Admin
         url = f"/admin/auth/user/{obj.user.id}/password/"
         return format_html(
             '<a class="button" href="{}" style="background: #417690; color: white; padding: 10px 15px; border-radius: 4px; text-decoration: none; display: inline-block;">Сменить пароль пользователя</a>',
             url
         )
 
-    # --- СОХРАНЯЕМ ТВОИ СУЩЕСТВУЮЩИЕ ACTIONS ---
+    # --- ТВОИ СУЩЕСТВУЮЩИЕ ACTIONS (без изменений) ---
 
     @admin.action(description='📥 Импорт детей из Excel')
     def import_from_excel(self, request, queryset):
-        from django.shortcuts import render, redirect
         from django.http import HttpResponseRedirect, HttpResponse
-        from django.urls import reverse
         from .services.import_children import import_children_from_excel, create_excel_template
         
         if request.method != 'POST':
@@ -252,7 +257,7 @@ class ChildAdmin(admin.ModelAdmin):
         wb.save(response)
         
         return response
-
+    
 @admin.register(ChildEnrollment)
 class ChildEnrollmentAdmin(admin.ModelAdmin):
     list_display = ['child', 'group', 'remaining_lessons', 'is_active', 'enrolled_at']
