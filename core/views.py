@@ -13,7 +13,7 @@ from django.db.models.functions import TruncMonth
 from django.db.models import Exists, OuterRef
 from django.http import HttpResponseForbidden
 from datetime import time
-
+import logging
 from .models import (
     ParentProfile, TeacherProfile, Child, Group,
     Lesson, Attendance, Certificate, ScheduleSlot,
@@ -1686,36 +1686,20 @@ def event_pay(request, registration_id):
     return redirect(result['url'])
 
 import json
-import logging
 from django.views.decorators.csrf import csrf_exempt
 from django.http import JsonResponse
 from django.utils import timezone
 from core.models import Payment
 
-<<<<<<< HEAD
 logger = logging.getLogger(__name__)
 
-=======
->>>>>>> c2f4568a60713884a2dce6e3934360afbb8e2abf
 @csrf_exempt
 def tochka_webhook(request):
     if request.method != 'POST':
         return JsonResponse({'error': 'Method not allowed'}, status=405)
 
-<<<<<<< HEAD
-    # Логирование для отладки (в продакшене поможет увидеть реальный формат)
     logger.info(f"Tochka Webhook received. Headers: {dict(request.headers)}")
     
-=======
-    webhook_secret = os.getenv('TOCHKA_WEBHOOK_SECRET', '')
-    received_secret = request.headers.get('X-Webhook-Secret', '')
-
-    if webhook_secret and received_secret != webhook_secret:
-        # Для отладки можно временно закомментировать эту проверку, 
-        # но в продакшене она обязательна!
-        pass 
-
->>>>>>> c2f4568a60713884a2dce6e3934360afbb8e2abf
     try:
         payload = json.loads(request.body.decode('utf-8'))
         logger.info(f"Tochka Webhook Payload: {payload}")
@@ -1723,25 +1707,13 @@ def tochka_webhook(request):
         logger.error(f"Invalid JSON in Tochka webhook: {e}")
         return JsonResponse({'error': 'Invalid JSON'}, status=400)
 
-<<<<<<< HEAD
-    # Точка Банк обычно присылает 'id' как ID операции, или 'payment_id'
     payment_id = (
-        payload.get('id') or
-        payload.get('payment_id') or
-        payload.get('operation_id') or
+        payload.get('id') or 
+        payload.get('payment_id') or 
+        payload.get('operation_id') or 
         (payload.get('payment') and payload['payment'].get('id'))
-=======
-    # ИСПРАВЛЕНО: ищем ID платежа во всех возможных полях от Точки
-    payment_id = (
-        payload.get('payment_id')
-        or payload.get('id')
-        or payload.get('bank_payment_id')
-        or payload.get('operationId')
-        or payload.get('paymentLinkId')
->>>>>>> c2f4568a60713884a2dce6e3934360afbb8e2abf
     )
     
-    # Приводим к строке для надежного сравнения
     if payment_id:
         payment_id = str(payment_id)
         
@@ -1751,19 +1723,13 @@ def tochka_webhook(request):
         logger.warning(f"No payment_id found in payload: {payload}")
         return JsonResponse({'error': 'payment_id is required'}, status=400)
 
-    # Ищем платеж по bank_payment_id
     payment = Payment.objects.filter(bank_payment_id=payment_id).first()
 
     if not payment:
         logger.warning(f"Payment not found for bank_payment_id: {payment_id}")
         return JsonResponse({'error': 'Payment not found'}, status=404)
 
-<<<<<<< HEAD
-    # Статусы Точки: APPROVED, REJECTED, CANCELLED и т.д.
     if status in ['APPROVED', 'SUCCESS', 'paid', 'success', 'completed']:
-=======
-    if status in ['paid', 'success', 'successful', 'completed', 'APPROVED']:
->>>>>>> c2f4568a60713884a2dce6e3934360afbb8e2abf
         if payment.status != 'paid':
             payment.status = 'paid'
             payment.paid_at = timezone.now()
@@ -1776,30 +1742,18 @@ def tochka_webhook(request):
                 registration.paid_at = timezone.now()
                 registration.save()
             else:
-<<<<<<< HEAD
                 from core.services.debts import settle_debts_on_payment
                 settle_debts_on_payment(payment)
 
     elif status in ['REJECTED', 'CANCELLED', 'failed', 'cancelled', 'canceled']:
-=======
-                # Вот здесь начисляются занятия!
-                from core.services.debts import settle_debts_on_payment
-                settle_debts_on_payment(payment)
-                
-    elif status in ['failed', 'cancelled', 'canceled']:
->>>>>>> c2f4568a60713884a2dce6e3934360afbb8e2abf
         if payment.status == 'pending':
             payment.status = 'failed'
             payment.save()
             logger.info(f"Payment {payment.id} marked as failed.")
 
     return JsonResponse({'ok': True})
-<<<<<<< HEAD
-=======
-
 
 from django.contrib.auth import update_session_auth_hash
->>>>>>> c2f4568a60713884a2dce6e3934360afbb8e2abf
 
 @login_required
 def change_password(request):
