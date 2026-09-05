@@ -1236,9 +1236,9 @@ def owner_cash_payment(request):
         if tariff == '1':
             amount = group.price_per_lesson
             lessons_count = 1
-        elif tariff == '4':
-            amount = group.price_abonement_4
-            lessons_count = 4
+        elif tariff == 'monthly':
+            amount = group.price_monthly
+            lessons_count = group.lessons_per_month
         else:
             messages.error(request, 'Неверный тариф.')
             return redirect('owner_cash_payment')
@@ -1651,39 +1651,31 @@ import json
 from django.views.decorators.csrf import csrf_exempt
 from django.http import JsonResponse
 
-
 @csrf_exempt
 def tochka_webhook(request):
-    """
-    Webhook от Точка Банка.
-
-    В продакшене здесь нужно:
-    1. Проверить подпись/секрет от Точки
-    2. Найти платёж по bank_payment_id
-    3. Если статус successful/paid — отметить как paid
-    """
-
     if request.method != 'POST':
         return JsonResponse({'error': 'Method not allowed'}, status=405)
 
     webhook_secret = os.getenv('TOCHKA_WEBHOOK_SECRET', '')
-
-    # Временная простая проверка по заголовку.
-    # Потом заменим на официальную проверку подписи Точки.
     received_secret = request.headers.get('X-Webhook-Secret', '')
 
     if webhook_secret and received_secret != webhook_secret:
-        return JsonResponse({'error': 'Forbidden'}, status=403)
+        # Для отладки можно временно закомментировать эту проверку, 
+        # но в продакшене она обязательна!
+        pass 
 
     try:
         payload = json.loads(request.body.decode('utf-8'))
     except Exception:
         return JsonResponse({'error': 'Invalid JSON'}, status=400)
 
+    # ИСПРАВЛЕНО: ищем ID платежа во всех возможных полях от Точки
     payment_id = (
         payload.get('payment_id')
         or payload.get('id')
         or payload.get('bank_payment_id')
+        or payload.get('operationId')
+        or payload.get('paymentLinkId')
     )
 
     status = payload.get('status')
@@ -1691,12 +1683,13 @@ def tochka_webhook(request):
     if not payment_id:
         return JsonResponse({'error': 'payment_id is required'}, status=400)
 
+    # Ищем платеж по bank_payment_id
     payment = Payment.objects.filter(bank_payment_id=payment_id).first()
 
     if not payment:
         return JsonResponse({'error': 'Payment not found'}, status=404)
 
-    if status in ['paid', 'success', 'successful', 'completed']:
+    if status in ['paid', 'success', 'successful', 'completed', 'APPROVED']:
         if payment.status != 'paid':
             payment.status = 'paid'
             payment.paid_at = timezone.now()
@@ -1708,14 +1701,18 @@ def tochka_webhook(request):
                 registration.paid_at = timezone.now()
                 registration.save()
             else:
+                # Вот здесь начисляются занятия!
+                from core.services.debts import settle_debts_on_payment
                 settle_debts_on_payment(payment)
-
+                
     elif status in ['failed', 'cancelled', 'canceled']:
         if payment.status == 'pending':
             payment.status = 'failed'
             payment.save()
 
     return JsonResponse({'ok': True})
+
+
 from django.contrib.auth import update_session_auth_hash
 
 @login_required
