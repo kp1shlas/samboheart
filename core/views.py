@@ -1706,6 +1706,18 @@ logger = logging.getLogger(__name__)
 
 @csrf_exempt
 def tochka_webhook(request):
+    """
+    Webhook от Точка Банка.
+    Обрабатывает POST-запросы с уведомлениями о платежах.
+    GET-запросы используются Точкой для проверки доступности URL.
+    """
+    # Точка проверяет доступность GET-запросом
+    if request.method == 'GET':
+        return JsonResponse({
+            'status': 'ok',
+            'message': 'Webhook endpoint is active'
+        }, status=200)
+        
     if request.method != 'POST':
         return JsonResponse({'error': 'Method not allowed'}, status=405)
 
