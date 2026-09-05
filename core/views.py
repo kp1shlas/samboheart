@@ -1708,71 +1708,117 @@ logger = logging.getLogger(__name__)
 def tochka_webhook(request):
     """
     Webhook от Точка Банка.
-    Обрабатывает POST-запросы с уведомлениями о платежах.
-    GET-запросы используются Точкой для проверки доступности URL.
+    - GET: health-check (Точка проверяет доступность)
+    - POST: уведомления о платежах
     """
-    # Точка проверяет доступность GET-запросом
+    # GET — health-check
     if request.method == 'GET':
         return JsonResponse({
             'status': 'ok',
-            'message': 'Webhook endpoint is active'
+            'service': 'samboheart-webhook',
         }, status=200)
-        
+    
     if request.method != 'POST':
         return JsonResponse({'error': 'Method not allowed'}, status=405)
 
     logger.info(f"Tochka Webhook received. Headers: {dict(request.headers)}")
     
+    # Парсим тело
     try:
-        payload = json.loads(request.body.decode('utf-8'))
+        raw_body = request.body.decode('utf-8')
+        logger.info(f"Tochka Webhook Raw Body: {raw_body[:1000]}")
+        
+        if not raw_body or raw_body.strip() == '':
+            # Точка иногда отправляет пустое тело как health-check
+            logger.info("Empty body - treating as health check")
+            return JsonResponse({'ok': True}, status=200)
+        
+        payload = json.loads(raw_body)
         logger.info(f"Tochka Webhook Payload: {payload}")
-    except Exception as e:
+    except json.JSONDecodeError as e:
         logger.error(f"Invalid JSON in Tochka webhook: {e}")
         return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    except Exception as e:
+        logger.error(f"Error parsing webhook: {e}")
+        return JsonResponse({'error': 'Parse error'}, status=400)
 
+    # 🔥 СПЕЦИАЛЬНАЯ ОБРАБОТКА ТЕСТОВЫХ ЗАПРОСОВ ТОЧКИ
+    # Точка отправляет тестовые payload без payment_id при регистрации webhook
+    if payload.get('test') is True or payload.get('type') == 'test':
+        logger.info("Test webhook received - returning 200")
+        return JsonResponse({'ok': True, 'test': True}, status=200)
+    
+    # Если payload пустой словарь или не содержит нужных полей — считаем health-check
+    if not payload or (isinstance(payload, dict) and len(payload) == 0):
+        logger.info("Empty payload - treating as health check")
+        return JsonResponse({'ok': True}, status=200)
+
+    # Ищем payment_id во всех возможных полях
     payment_id = (
-        payload.get('id') or 
-        payload.get('payment_id') or 
-        payload.get('operation_id') or 
-        (payload.get('payment') and payload['payment'].get('id'))
+        payload.get('id') or
+        payload.get('payment_id') or
+        payload.get('operation_id') or
+        payload.get('operationId') or
+        payload.get('paymentLinkId') or
+        payload.get('bank_payment_id') or
+        (payload.get('payment') and payload['payment'].get('id')) or
+        (payload.get('data') and payload['data'].get('id'))
     )
     
-    if payment_id:
-        payment_id = str(payment_id)
-        
-    status = payload.get('status')
+    status = payload.get('status') or payload.get('paymentStatus')
 
+    # Если это явно тестовый пинг без payment_id — возвращаем 200
     if not payment_id:
-        logger.warning(f"No payment_id found in payload: {payload}")
+        # Проверяем, может это health-check от Точки
+        # (они шлют разные структуры при проверке)
+        logger.warning(f"No payment_id found. Payload: {payload}")
+        
+        # Если есть status='test' или это ping-запрос — возвращаем 200
+        if status in ['test', 'ping', 'health']:
+            return JsonResponse({'ok': True}, status=200)
+        
+        # Если payload совсем странный — всё равно 200 для совместимости
+        if not status:
+            logger.info("No status and no payment_id - returning 200 (health check)")
+            return JsonResponse({'ok': True, 'message': 'health check'}, status=200)
+        
         return JsonResponse({'error': 'payment_id is required'}, status=400)
 
+    # Приводим к строке
+    payment_id = str(payment_id)
+
+    # Ищем платёж
     payment = Payment.objects.filter(bank_payment_id=payment_id).first()
 
     if not payment:
         logger.warning(f"Payment not found for bank_payment_id: {payment_id}")
-        return JsonResponse({'error': 'Payment not found'}, status=404)
+        # Возвращаем 200, чтобы Точка не ретраила бесконечно
+        return JsonResponse({'ok': True, 'message': 'payment not found'}, status=200)
 
-    if status in ['APPROVED', 'SUCCESS', 'paid', 'success', 'completed']:
+    # Обрабатываем статус
+    if status in ['APPROVED', 'SUCCESS', 'paid', 'success', 'completed', 'PAID']:
         if payment.status != 'paid':
             payment.status = 'paid'
             payment.paid_at = timezone.now()
             payment.save()
-            logger.info(f"Payment {payment.id} marked as paid.")
+            logger.info(f"Payment {payment.id} marked as paid")
 
             if payment.event_registration:
                 registration = payment.event_registration
                 registration.status = 'paid'
                 registration.paid_at = timezone.now()
                 registration.save()
+                logger.info(f"Event registration {registration.id} marked as paid")
             else:
                 from core.services.debts import settle_debts_on_payment
                 settle_debts_on_payment(payment)
+                logger.info(f"Debts settled for payment {payment.id}")
 
-    elif status in ['REJECTED', 'CANCELLED', 'failed', 'cancelled', 'canceled']:
+    elif status in ['REJECTED', 'CANCELLED', 'failed', 'cancelled', 'canceled', 'FAILED']:
         if payment.status == 'pending':
             payment.status = 'failed'
             payment.save()
-            logger.info(f"Payment {payment.id} marked as failed.")
+            logger.info(f"Payment {payment.id} marked as failed")
 
     return JsonResponse({'ok': True})
 
