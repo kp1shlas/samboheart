@@ -202,7 +202,10 @@ class ScheduleSlot(models.Model):
 
 class Lesson(models.Model):
     group = models.ForeignKey(
-        Group, on_delete=models.CASCADE,
+        Group, 
+        on_delete=models.SET_NULL, # Если группу удалят, индивидуальное занятие останется
+        null=True, 
+        blank=True, # Разрешаем создавать занятие БЕЗ группы
         related_name='lessons',
         verbose_name='Группа'
     )
@@ -210,13 +213,18 @@ class Lesson(models.Model):
     start_time = models.TimeField('Время начала')
     is_cancelled = models.BooleanField('Отменено', default=False)
     cancel_reason = models.CharField('Причина отмены', max_length=300, blank=True)
+    
+    # НОВОЕ ПОЛЕ: Отдельные дети, для которых предназначено это занятие
     specific_children = models.ManyToManyField(
-        Child, blank=True,
+        Child, 
+        blank=True,
         related_name='specific_lessons',
         verbose_name='Отдельные дети (дополнительно к группе)'
     )
+
     def __str__(self):
-        return f'{self.group.name} — {self.date} {self.start_time}'
+        group_name = self.group.name if self.group else "Индивидуальное"
+        return f'{group_name} — {self.date} {self.start_time}'
 
     class Meta:
         verbose_name = 'Занятие'

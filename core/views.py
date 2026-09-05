@@ -14,6 +14,7 @@ from django.db.models import Exists, OuterRef
 from django.http import HttpResponseForbidden
 from datetime import time
 import logging
+from django.db.models import Q
 from .models import (
     ParentProfile, TeacherProfile, Child, Group,
     Lesson, Attendance, Certificate, ScheduleSlot,
@@ -302,36 +303,44 @@ def parent_dashboard(request):
         )
 
     # 🔥 НОВОЕ: Ближайшие занятия всех детей родителя (на 7 дней)
+    
+    child_ids = children.values_list('id', flat=True)
     upcoming_lessons = []
-    if group_ids:
+    
+    if group_ids or child_ids:
         week_ahead = today + timedelta(days=7)
+        
         lessons_qs = (
             Lesson.objects
             .filter(
-                group__id__in=group_ids,
+                Q(group__id__in=group_ids) | Q(specific_children__id__in=child_ids),
                 is_cancelled=False,
                 date__gte=today,
                 date__lte=week_ahead,
             )
             .select_related('group', 'group__teacher')
+            .prefetch_related('specific_children')
+            .distinct() # КРИТИЧЕСКИ ВАЖНО: убирает дубликаты из-за ManyToMany
             .order_by('date', 'start_time')
         )
         
-        # Для каждого занятия определяем, кто из детей ходит
         for lesson in lessons_qs:
-            # Находим детей родителя в этой группе
-            children_in_group = [
-                c for c in children
-                if any(
-                    e.group_id == lesson.group_id and e.is_active
+            visible_children = []
+            for c in children:
+                in_group = lesson.group and any(
+                    e.group_id == lesson.group.id and e.is_active
                     for e in c.enrollments.all()
                 )
-            ]
+                in_specific = c in lesson.specific_children.all()
+                
+                if in_group or in_specific:
+                    visible_children.append(c)
             
-            upcoming_lessons.append({
-                'lesson': lesson,
-                'children': children_in_group,
-            })
+            if visible_children:
+                upcoming_lessons.append({
+                    'lesson': lesson,
+                    'children': visible_children,
+                })
 
     return render(request, 'parent_dashboard.html', {
         'children': children,
@@ -395,10 +404,11 @@ def child_detail(request, child_id):
         upcoming_lessons = (
             Lesson.objects
             .filter(
-                group=group,
+                Q(group=group) | Q(specific_children=child),
                 date__gte=today,
                 is_cancelled=False,
             )
+            .distinct() # Убираем дубли, если ребенок и в группе, и в specific_children
             .order_by('date', 'start_time')[:3]
         )
 
@@ -1002,9 +1012,10 @@ def attendance_sheet_for_lesson(request, lesson_id):
         return redirect('teacher_dashboard')
 
     children = Child.objects.filter(
-        enrollments__group=lesson.group,
-        enrollments__is_active=True,
-        is_active=True,
+        is_active=True
+    ).filter(
+        Q(enrollments__group=lesson.group, enrollments__is_active=True) | 
+        Q(specific_lessons=lesson)
     ).distinct()
 
     existing = {
