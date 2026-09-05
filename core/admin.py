@@ -46,8 +46,11 @@ class ChildEnrollmentInline(admin.TabularInline):
     verbose_name = 'Запись в группу'
     verbose_name_plural = 'Записи в группы'
 
-# --- Inline-таблицы для карточки ребёнка ---
-# (Обрати внимание: LoginHistoryInline удален, так как он привязан к User, а не к Child)
+from django.utils.safestring import mark_safe  # <-- ДОБАВЬ ЭТОТ ИМПОРТ В НАЧАЛО ФАЙЛА
+
+# ═══════════════════════════════════════════════════════
+# INLINE-ТАБЛИЦЫ ДЛЯ КАРТОЧКИ РЕБЁНКА
+# ═══════════════════════════════════════════════════════
 
 class AttendanceInline(admin.TabularInline):
     model = Attendance
@@ -98,12 +101,11 @@ class ChildAdmin(admin.ModelAdmin):
         AttendanceInline,
         PaymentInline,
         CertificateInline,
-        # LoginHistoryInline удален отсюда
     ]
 
     readonly_fields = [
         'get_current_session', 
-        'get_login_history_list', # Новое поле вместо инлайна
+        'get_login_history_list', 
         'get_last_login_info', 
         'change_password_link'
     ]
@@ -146,7 +148,7 @@ class ChildAdmin(admin.ModelAdmin):
             time_str = h.timestamp.strftime('%d.%m.%Y %H:%M')
             html_list += f"<li style='margin-bottom: 4px;'><strong>{time_str}</strong> — IP: {ip}</li>"
         html_list += "</ul>"
-        return format_html(html_list)
+        return mark_safe(html_list)  # <-- ИСПОЛЬЗУЕМ mark_safe
 
     @admin.display(description='Активные сессии')
     def get_current_session(self, obj):
@@ -159,16 +161,15 @@ class ChildAdmin(admin.ModelAdmin):
             if str(obj.user.id) == str(session_data.get('_auth_user_id')):
                 active_sessions.append(f"✅ Активна до {s.expire_date.strftime('%d.%m.%Y %H:%M')}")
         
-        return format_html("<br>".join(active_sessions)) if active_sessions else "❌ Нет активных сессий"
+        return mark_safe("<br>".join(active_sessions)) if active_sessions else "❌ Нет активных сессий"
 
     @admin.display(description='Управление паролем')
     def change_password_link(self, obj):
         if not obj.user:
             return "Нет аккаунта"
         url = f"/admin/auth/user/{obj.user.id}/password/"
-        return format_html(
-            '<a class="button" href="{}" style="background: #417690; color: white; padding: 10px 15px; border-radius: 4px; text-decoration: none; display: inline-block;">Сменить пароль пользователя</a>',
-            url
+        return mark_safe(
+            f'<a class="button" href="{url}" style="background: #417690; color: white; padding: 10px 15px; border-radius: 4px; text-decoration: none; display: inline-block;">Сменить пароль пользователя</a>'
         )
 
     # --- ТВОИ СУЩЕСТВУЮЩИЕ ACTIONS (без изменений) ---
