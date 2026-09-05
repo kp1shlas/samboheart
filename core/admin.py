@@ -4,8 +4,14 @@ from datetime import datetime
 from .models import (
     ParentProfile, TeacherProfile, Child, Group,
     Lesson, Attendance, Certificate, ScheduleSlot,
-    News, Event, Payment, ChildEnrollment, ChildDiscount, EventRegistration
+    News, Event, Payment, ChildEnrollment, ChildDiscount, EventRegistration,
+    LoginHistory
 )
+from django.contrib import admin
+from django.contrib.auth.models import User
+from django.contrib.sessions.models import Session
+from django.utils.html import format_html
+
 
 
 # ═══════════════════════════════════════════════════════
@@ -40,14 +46,125 @@ class ChildEnrollmentInline(admin.TabularInline):
     verbose_name = 'Запись в группу'
     verbose_name_plural = 'Записи в группы'
 
+# --- Новые Inline-таблицы для карточки ребёнка ---
+
+class AttendanceInline(admin.TabularInline):
+    model = Attendance
+    extra = 0
+    fields = ['lesson', 'status', 'was_deducted', 'is_debt']
+    readonly_fields = ['lesson', 'was_deducted', 'is_debt']
+    can_delete = False
+    max_num = 15  # Показываем последние 15 записей посещаемости
+    verbose_name = 'Запись посещаемости'
+    verbose_name_plural = 'Посещаемость'
+    ordering = ['-lesson__date']
+
+
+class PaymentInline(admin.TabularInline):
+    model = Payment
+    extra = 0
+    fields = ['created_at', 'amount', 'lessons_count', 'method', 'status', 'paid_at']
+    readonly_fields = ['created_at', 'paid_at']
+    can_delete = False
+    max_num = 10
+    verbose_name = 'Платёж'
+    verbose_name_plural = 'История оплат'
+    ordering = ['-created_at']
+
+
+class CertificateInline(admin.TabularInline):
+    model = Certificate
+    extra = 0
+    fields = ['date_from', 'date_to', 'status', 'uploaded_at']
+    readonly_fields = ['uploaded_at', 'reviewed_at']
+    can_delete = False
+    max_num = 10
+    verbose_name = 'Справка'
+    verbose_name_plural = 'Справки'
+    ordering = ['-uploaded_at']
+
+
+class LoginHistoryInline(admin.TabularInline):
+    model = LoginHistory
+    extra = 0
+    fields = ['timestamp', 'ip_address']
+    readonly_fields = ['timestamp', 'ip_address']
+    can_delete = False
+    max_num = 5  # Только последние 5 входов
+    verbose_name = 'Вход в систему'
+    verbose_name_plural = 'История входов'
+    ordering = ['-timestamp']
+
 
 @admin.register(Child)
 class ChildAdmin(admin.ModelAdmin):
-    list_display = ['full_name', 'parent', 'birth_date', 'is_active']
-    list_filter = ['is_active']
+    list_display = ['full_name', 'parent', 'birth_date', 'is_active', 'get_last_login_info']
+    list_filter = ['is_active', 'enrollments__group']
     search_fields = ['full_name', 'user__username', 'parent__user__username']
     raw_id_fields = ['parent', 'user']
     actions = ['import_from_excel', 'export_to_excel']
+
+    # Подключаем все Inline-таблицы
+    inlines = [
+        ChildEnrollmentInline,   # Уже был определён выше в твоём коде
+        AttendanceInline,
+        PaymentInline,
+        CertificateInline,
+        LoginHistoryInline,
+    ]
+
+    # Новые поля только для чтения
+    readonly_fields = ['get_current_session', 'get_last_login_info', 'change_password_link']
+
+    # Группируем поля в секции для удобства
+    fieldsets = (
+        (None, {
+            'fields': ('full_name', 'birth_date', 'parent', 'user', 'is_active')
+        }),
+        ('🔐 Безопасность и сессии', {
+            'fields': ('get_current_session', 'get_last_login_info', 'change_password_link'),
+            'classes': ('collapse',)  # Сворачиваемая секция
+        }),
+    )
+
+    @admin.display(description='Последний вход')
+    def get_last_login_info(self, obj):
+        if not obj.user:
+            return "Нет аккаунта"
+        
+        last_history = LoginHistory.objects.filter(user=obj.user).first()
+        last_login_str = obj.user.last_login.strftime('%d.%m.%Y %H:%M') if obj.user.last_login else 'Никогда'
+        
+        info = f"Вход: {last_login_str}"
+        if last_history:
+            info += f" | IP: {last_history.ip_address}"
+        return info
+
+    @admin.display(description='Активные сессии')
+    def get_current_session(self, obj):
+        if not obj.user:
+            return "Нет аккаунта"
+        
+        active_sessions = []
+        for s in Session.objects.filter(expire_date__gte=timezone.now()):
+            session_data = s.get_decoded()
+            if str(obj.user.id) == str(session_data.get('_auth_user_id')):
+                active_sessions.append(f"✅ Активна до {s.expire_date.strftime('%d.%m.%Y %H:%M')}")
+        
+        return format_html("<br>".join(active_sessions)) if active_sessions else "❌ Нет активных сессий"
+
+    @admin.display(description='Управление паролем')
+    def change_password_link(self, obj):
+        if not obj.user:
+            return "Нет аккаунта"
+        # Ссылка на стандартную страницу смены пароля Django Admin
+        url = f"/admin/auth/user/{obj.user.id}/password/"
+        return format_html(
+            '<a class="button" href="{}" style="background: #417690; color: white; padding: 10px 15px; border-radius: 4px; text-decoration: none; display: inline-block;">Сменить пароль пользователя</a>',
+            url
+        )
+
+    # --- СОХРАНЯЕМ ТВОИ СУЩЕСТВУЮЩИЕ ACTIONS ---
 
     @admin.action(description='📥 Импорт детей из Excel')
     def import_from_excel(self, request, queryset):
@@ -56,31 +173,23 @@ class ChildAdmin(admin.ModelAdmin):
         from django.urls import reverse
         from .services.import_children import import_children_from_excel, create_excel_template
         
-        # Если GET — показываем форму загрузки
         if request.method != 'POST':
-            # Создаём шаблон для скачивания
             template = create_excel_template()
-            
             response = HttpResponse(
                 template.read(),
                 content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
             )
             response['Content-Disposition'] = 'attachment; filename="children_template.xlsx"'
-            
-            # Сохраняем в сессии флаг, что нужно показать форму после скачивания
             request.session['show_import_form'] = True
             return response
         
-        # Если POST — обрабатываем загруженный файл
         excel_file = request.FILES.get('excel_file')
         if not excel_file:
             self.message_user(request, 'Файл не выбран', level='error')
             return HttpResponseRedirect(request.get_full_path())
         
-        # Импортируем
         result = import_children_from_excel(excel_file)
         
-        # Формируем сообщение
         messages_list = []
         if result['success'] > 0:
             messages_list.append(f'✅ Создано детей: {result["success"]}')
@@ -91,7 +200,6 @@ class ChildAdmin(admin.ModelAdmin):
         
         self.message_user(request, ' | '.join(messages_list))
         
-        # Показываем детали
         if result['children']:
             details = []
             for child in result['children'][:5]:
@@ -116,11 +224,9 @@ class ChildAdmin(admin.ModelAdmin):
         ws = wb.active
         ws.title = 'Дети'
         
-        # Заголовки
         headers = ['ФИО', 'Дата рождения', 'Логин', 'Группы', 'Родитель']
         ws.append(headers)
         
-        # Данные
         for child in queryset:
             groups = ', '.join([e.group.name for e in child.enrollments.all()])
             parent_username = child.parent.user.username if child.parent else ''
@@ -133,14 +239,12 @@ class ChildAdmin(admin.ModelAdmin):
                 parent_username,
             ])
         
-        # Настройка ширины
         ws.column_dimensions['A'].width = 30
         ws.column_dimensions['B'].width = 15
         ws.column_dimensions['C'].width = 20
         ws.column_dimensions['D'].width = 30
         ws.column_dimensions['E'].width = 20
         
-        # Возвращаем файл
         response = HttpResponse(
             content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
         )

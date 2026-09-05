@@ -491,7 +491,11 @@ class Payment(models.Model):
         ordering = ['-created_at']
 
 class LoginHistory(models.Model):
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='login_history')
+    user = models.ForeignKey(
+        User, on_delete=models.CASCADE, 
+        related_name='login_history',
+        verbose_name='Пользователь'
+    )
     ip_address = models.GenericIPAddressField('IP адрес', null=True, blank=True)
     timestamp = models.DateTimeField('Время входа', auto_now_add=True)
 
@@ -501,4 +505,5 @@ class LoginHistory(models.Model):
         ordering = ['-timestamp']
 
     def __str__(self):
-        return f'{self.user.username} - {self.timestamp}'
+        time_str = self.timestamp.strftime("%d.%m.%Y %H:%M")
+        return f'{self.user.username} - {time_str}'
