@@ -210,7 +210,11 @@ class Lesson(models.Model):
     start_time = models.TimeField('Время начала')
     is_cancelled = models.BooleanField('Отменено', default=False)
     cancel_reason = models.CharField('Причина отмены', max_length=300, blank=True)
-
+    specific_children = models.ManyToManyField(
+        Child, blank=True,
+        related_name='specific_lessons',
+        verbose_name='Отдельные дети (дополнительно к группе)'
+    )
     def __str__(self):
         return f'{self.group.name} — {self.date} {self.start_time}'
 
@@ -477,3 +481,16 @@ class Payment(models.Model):
         verbose_name = 'Платёж'
         verbose_name_plural = 'Платежи'
         ordering = ['-created_at']
+
+class LoginHistory(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='login_history')
+    ip_address = models.GenericIPAddressField('IP адрес', null=True, blank=True)
+    timestamp = models.DateTimeField('Время входа', auto_now_add=True)
+
+    class Meta:
+        verbose_name = 'История входов'
+        verbose_name_plural = 'Истории входов'
+        ordering = ['-timestamp']
+
+    def __str__(self):
+        return f'{self.user.username} - {self.timestamp}'

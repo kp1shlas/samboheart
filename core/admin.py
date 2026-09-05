@@ -209,6 +209,7 @@ class ScheduleSlotAdmin(admin.ModelAdmin):
 class LessonAdmin(admin.ModelAdmin):
     list_display = ['group', 'date', 'start_time', 'is_cancelled', 'cancel_reason']
     list_filter = ['group', 'date', 'is_cancelled']
+    filter_horizontal = ('specific_children',)
     list_editable = ['is_cancelled']
     date_hierarchy = 'date'
     actions = ['cancel_lessons', 'restore_lessons']

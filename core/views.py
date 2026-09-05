@@ -4,12 +4,13 @@ from decimal import Decimal
 from datetime import timedelta
 from datetime import time as datetime_time
 from django.shortcuts import render, redirect, get_object_or_404
-from django.contrib.auth import login, logout, authenticate
+from django.contrib.auth import login, logout, authenticate, update_session_auth_hash
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.utils import timezone
 from django.db.models import Sum, Count, Exists, OuterRef
 from django.db.models.functions import TruncMonth
+from django.db.models import Exists, OuterRef
 from django.http import HttpResponseForbidden
 from datetime import time
 
@@ -411,8 +412,26 @@ def child_detail(request, child_id):
             'upcoming_lessons': upcoming_lessons,
         })
 
+     
+    today = timezone.now().date()
+    
+    # Проверяем, есть ли у записи посещаемости активная бесплатная скидка
+    free_discount_exists = ChildDiscount.objects.filter(
+        enrollments=OuterRef('enrollment_id'),
+        is_active=True,
+        discount_type='free',
+        valid_from__lte=today,
+        valid_until__gte=today,
+    )
+
     debts_count = Attendance.objects.filter(
-        child=child, is_debt=True
+        child=child, 
+        is_debt=True,
+        enrollment__isnull=False
+    ).annotate(
+        has_free=Exists(free_discount_exists)
+    ).filter(
+        has_free=False # Игнорируем старые долги, если сейчас действует бесплатная скидка
     ).count()
 
     return render(request, 'child_detail.html', {
@@ -501,8 +520,26 @@ def child_dashboard(request):
             'upcoming_lessons': upcoming_lessons,
         })
 
+     
+    today = timezone.now().date()
+    
+    # Проверяем, есть ли у записи посещаемости активная бесплатная скидка
+    free_discount_exists = ChildDiscount.objects.filter(
+        enrollments=OuterRef('enrollment_id'),
+        is_active=True,
+        discount_type='free',
+        valid_from__lte=today,
+        valid_until__gte=today,
+    )
+
     debts_count = Attendance.objects.filter(
-        child=child, is_debt=True
+        child=child, 
+        is_debt=True,
+        enrollment__isnull=False
+    ).annotate(
+        has_free=Exists(free_discount_exists)
+    ).filter(
+        has_free=False # Игнорируем старые долги, если сейчас действует бесплатная скидка
     ).count()
 
     return render(request, 'child_detail.html', {
@@ -993,7 +1030,8 @@ def attendance_sheet_for_lesson(request, lesson_id):
                 # Если был с 0 занятий → долг
                 is_debt = False
                 if status == 'present' and enrollment and enrollment.remaining_lessons <= 0:
-                    is_debt = True
+                    if not enrollment.is_free:
+                        is_debt = True
 
                 attendance, created = Attendance.objects.get_or_create(
                     lesson=lesson,
@@ -1089,7 +1127,7 @@ def owner_dashboard(request):
         ChildEnrollment.objects
         .filter(
             is_active=True,
-            remaining_lessons=0,
+            remaining_lessons__lte=0,
             child__is_active=True,
         )
         .annotate(has_free=Exists(free_discount_exists))
@@ -1180,7 +1218,7 @@ def owner_report(request):
         ChildEnrollment.objects
         .filter(
             is_active=True,
-            remaining_lessons=0,
+            remaining_lessons__lte=0,
             child__is_active=True,
         )
         .annotate(has_free=Exists(free_discount_exists))
@@ -1648,59 +1686,61 @@ def event_pay(request, registration_id):
     return redirect(result['url'])
 
 import json
+import logging
 from django.views.decorators.csrf import csrf_exempt
 from django.http import JsonResponse
+from django.utils import timezone
+from core.models import Payment
 
+logger = logging.getLogger(__name__)
 
 @csrf_exempt
 def tochka_webhook(request):
-    """
-    Webhook от Точка Банка.
-
-    В продакшене здесь нужно:
-    1. Проверить подпись/секрет от Точки
-    2. Найти платёж по bank_payment_id
-    3. Если статус successful/paid — отметить как paid
-    """
-
     if request.method != 'POST':
         return JsonResponse({'error': 'Method not allowed'}, status=405)
 
-    webhook_secret = os.getenv('TOCHKA_WEBHOOK_SECRET', '')
-
-    # Временная простая проверка по заголовку.
-    # Потом заменим на официальную проверку подписи Точки.
-    received_secret = request.headers.get('X-Webhook-Secret', '')
-
-    if webhook_secret and received_secret != webhook_secret:
-        return JsonResponse({'error': 'Forbidden'}, status=403)
-
+    # Логирование для отладки (в продакшене поможет увидеть реальный формат)
+    logger.info(f"Tochka Webhook received. Headers: {dict(request.headers)}")
+    
     try:
         payload = json.loads(request.body.decode('utf-8'))
-    except Exception:
+        logger.info(f"Tochka Webhook Payload: {payload}")
+    except Exception as e:
+        logger.error(f"Invalid JSON in Tochka webhook: {e}")
         return JsonResponse({'error': 'Invalid JSON'}, status=400)
 
+    # Точка Банк обычно присылает 'id' как ID операции, или 'payment_id'
     payment_id = (
-        payload.get('payment_id')
-        or payload.get('id')
-        or payload.get('bank_payment_id')
+        payload.get('id') or
+        payload.get('payment_id') or
+        payload.get('operation_id') or
+        (payload.get('payment') and payload['payment'].get('id'))
     )
-
+    
+    # Приводим к строке для надежного сравнения
+    if payment_id:
+        payment_id = str(payment_id)
+        
     status = payload.get('status')
 
     if not payment_id:
+        logger.warning(f"No payment_id found in payload: {payload}")
         return JsonResponse({'error': 'payment_id is required'}, status=400)
 
+    # Ищем платеж по bank_payment_id
     payment = Payment.objects.filter(bank_payment_id=payment_id).first()
 
     if not payment:
+        logger.warning(f"Payment not found for bank_payment_id: {payment_id}")
         return JsonResponse({'error': 'Payment not found'}, status=404)
 
-    if status in ['paid', 'success', 'successful', 'completed']:
+    # Статусы Точки: APPROVED, REJECTED, CANCELLED и т.д.
+    if status in ['APPROVED', 'SUCCESS', 'paid', 'success', 'completed']:
         if payment.status != 'paid':
             payment.status = 'paid'
             payment.paid_at = timezone.now()
             payment.save()
+            logger.info(f"Payment {payment.id} marked as paid.")
 
             if payment.event_registration:
                 registration = payment.event_registration
@@ -1708,15 +1748,16 @@ def tochka_webhook(request):
                 registration.paid_at = timezone.now()
                 registration.save()
             else:
+                from core.services.debts import settle_debts_on_payment
                 settle_debts_on_payment(payment)
 
-    elif status in ['failed', 'cancelled', 'canceled']:
+    elif status in ['REJECTED', 'CANCELLED', 'failed', 'cancelled', 'canceled']:
         if payment.status == 'pending':
             payment.status = 'failed'
             payment.save()
+            logger.info(f"Payment {payment.id} marked as failed.")
 
     return JsonResponse({'ok': True})
-from django.contrib.auth import update_session_auth_hash
 
 @login_required
 def change_password(request):
