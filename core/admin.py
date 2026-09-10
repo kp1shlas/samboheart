@@ -11,6 +11,7 @@ from django.contrib import admin
 from django.contrib.auth.models import User
 from django.contrib.sessions.models import Session
 from django.utils.html import format_html
+from django.db.models import Q
 
 
 
@@ -87,12 +88,11 @@ class CertificateInline(admin.TabularInline):
     verbose_name_plural = 'Справки'
     ordering = ['-uploaded_at']
 
-
 @admin.register(Child)
 class ChildAdmin(admin.ModelAdmin):
     list_display = ['full_name', 'parent', 'birth_date', 'is_active', 'get_last_login_info']
     list_filter = ['is_active', 'enrollments__group']
-    list_editable = ['is_active'] 
+    list_editable = ['is_active']
     search_fields = ['full_name', 'user__username', 'parent__user__username']
     raw_id_fields = ['parent', 'user']
     actions = ['import_from_excel', 'export_to_excel', 'activate_selected', 'deactivate_selected']
@@ -105,34 +105,35 @@ class ChildAdmin(admin.ModelAdmin):
     ]
 
     readonly_fields = [
-        'get_current_session', 
-        'get_login_history_list', 
-        'get_last_login_info', 
-        'change_password_link'
+        'get_password_link',
+        'get_login_history_list',
+        'get_last_login_info',
+        'get_current_session'
     ]
 
     fieldsets = (
         (None, {
             'fields': ('full_name', 'birth_date', 'parent', 'user', 'is_active')
         }),
-        ('🔐 Безопасность и сессии', {
-            'fields': ('get_last_login_info', 'get_login_history_list', 'get_current_session', 'change_password_link'),
+        ('🔐 Безопасность', {
+            'fields': (
+                'get_password_link',
+                'get_last_login_info',
+                'get_current_session'
+            ),
             'classes': ('collapse',)
         }),
     )
 
-    @admin.display(description='Последний вход')
-    def get_last_login_info(self, obj):
+    @admin.display(description='Пароль')
+    def get_password_link(self, obj):
         if not obj.user:
             return "Нет аккаунта"
-        
-        last_history = LoginHistory.objects.filter(user=obj.user).first()
-        last_login_str = obj.user.last_login.strftime('%d.%m.%Y %H:%M') if obj.user.last_login else 'Никогда'
-        
-        info = f"Вход: {last_login_str}"
-        if last_history:
-            info += f" | IP: {last_history.ip_address or 'Неизвестен'}"
-        return info
+        url = f"/admin/auth/user/{obj.user.id}/password/"
+        return format_html(
+            '<a href="{}" class="button">🔑 Сменить пароль</a>',
+            url
+        )
 
     @admin.display(description='История входов (последние 5)')
     def get_login_history_list(self, obj):
@@ -143,50 +144,71 @@ class ChildAdmin(admin.ModelAdmin):
         if not histories:
             return "История пуста"
         
-        html_list = "<ul style='margin: 0; padding-left: 20px; color: #555;'>"
+        html_list = "<ul>"
         for h in histories:
             ip = h.ip_address or 'Неизвестен'
             time_str = h.timestamp.strftime('%d.%m.%Y %H:%M')
-            html_list += f"<li style='margin-bottom: 4px;'><strong>{time_str}</strong> — IP: {ip}</li>"
+            html_list += f"<li>{time_str} — IP: {ip}</li>"
         html_list += "</ul>"
-        return mark_safe(html_list)  # <-- ИСПОЛЬЗУЕМ mark_safe
+        return format_html(html_list)
+
+    @admin.display(description='Последний вход')
+    def get_last_login_info(self, obj):
+        if not obj.user:
+            return "Нет аккаунта"
+        
+        last_login = obj.user.last_login
+        if not last_login:
+            return "Никогда не входил"
+        
+        last_login_str = last_login.strftime('%d.%m.%Y %H:%M')
+        
+        last_history = LoginHistory.objects.filter(user=obj.user).order_by('-timestamp').first()
+        
+        info = f"Вход: {last_login_str}"
+        if last_history:
+            info += f" | IP: {last_history.ip_address or 'Неизвестен'}"
+        return info
 
     @admin.display(description='Активные сессии')
     def get_current_session(self, obj):
         if not obj.user:
             return "Нет аккаунта"
         
-        active_sessions = []
-        for s in Session.objects.filter(expire_date__gte=timezone.now()):
-            session_data = s.get_decoded()
-            if str(obj.user.id) == str(session_data.get('_auth_user_id')):
-                active_sessions.append(f"✅ Активна до {s.expire_date.strftime('%d.%m.%Y %H:%M')}")
+        from django.contrib.sessions.models import Session
+        from django.utils import timezone
         
-        return mark_safe("<br>".join(active_sessions)) if active_sessions else "❌ Нет активных сессий"
-
-    @admin.display(description='Управление паролем')
-    def change_password_link(self, obj):
-        if not obj.user:
-            return "Нет аккаунта"
-        url = f"/admin/auth/user/{obj.user.id}/password/"
-        return mark_safe(
-            f'<a class="button" href="{url}" style="background: #417690; color: white; padding: 10px 15px; border-radius: 4px; text-decoration: none; display: inline-block;">Сменить пароль пользователя</a>'
+        sessions = Session.objects.filter(
+            expire_date__gte=timezone.now()
         )
-
-    # --- ТВОИ СУЩЕСТВУЮЩИЕ ACTIONS (без изменений) ---
+        
+        active_sessions = []
+        for session in sessions:
+            session_data = session.get_decoded()
+            if str(obj.user.id) == session_data.get('_auth_user_id'):
+                active_sessions.append(session)
+        
+        if not active_sessions:
+            return "Нет активных сессий"
+        
+        return f"{len(active_sessions)} активных сессий"
 
     @admin.action(description='📥 Импорт детей из Excel')
     def import_from_excel(self, request, queryset):
+        from django.shortcuts import render, redirect
         from django.http import HttpResponseRedirect, HttpResponse
+        from django.urls import reverse
         from .services.import_children import import_children_from_excel, create_excel_template
         
         if request.method != 'POST':
             template = create_excel_template()
+            
             response = HttpResponse(
                 template.read(),
                 content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
             )
             response['Content-Disposition'] = 'attachment; filename="children_template.xlsx"'
+            
             request.session['show_import_form'] = True
             return response
         
@@ -269,26 +291,6 @@ class ChildAdmin(admin.ModelAdmin):
     def deactivate_selected(self, request, queryset):
         updated = queryset.update(is_active=False)
         self.message_user(request, f'Отключено детей: {updated}.')
-    
-     readonly_fields = ['get_password_link', 'get_login_history_list', 'get_last_login_info', 'get_current_session']
-    
-    fieldsets = (
-        (None, {'fields': ('full_name', 'birth_date', 'parent', 'user', 'is_active')}),
-        ('🔐 Безопасность', {
-            'fields': ('get_password_link', 'get_last_login_info', 'get_current_session'),
-            'classes': ('collapse',)
-        }),
-    )
-
-    @admin.display(description='Пароль')
-    def get_password_link(self, obj):
-        if not obj.user:
-            return "Нет аккаунта"
-        url = f"/admin/auth/user/{obj.user.id}/password/"
-        return format_html(
-            '<a href="{}" class="button">🔑 Сменить пароль</a>',
-            url
-        )
     
 @admin.register(ChildEnrollment)
 class ChildEnrollmentAdmin(admin.ModelAdmin):
