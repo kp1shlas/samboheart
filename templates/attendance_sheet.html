@@ -47,26 +47,26 @@
                         </span>
                     </td>
                     <td class="px-4 py-3">
-                        <div class="flex gap-3">
-                            {% with current=existing|default_if_none:"" %}
-                            <label class="flex items-center gap-1.5 cursor-pointer">
-                                <input type="radio"
-                                       name="status_{{ child.id }}"
-                                       value="present"
-                                       {% if existing|get_item:child.id == 'present' or child.id not in existing %}checked{% endif %}
-                                       class="w-4 h-4 accent-green-600">
-                                <span class="text-sm">Был</span>
-                            </label>
-                            <label class="flex items-center gap-1.5 cursor-pointer">
-                                <input type="radio"
-                                       name="status_{{ child.id }}"
-                                       value="absent"
-                                       {% if existing|get_item:child.id == 'absent' %}checked{% endif %}
-                                       class="w-4 h-4 accent-red-600">
-                                <span class="text-sm">Не был</span>
-                            </label>
-                            {% endwith %}
-                        </div>
+                        <div class="flex gap-2 flex-wrap">
+    <label class="flex items-center gap-1.5 cursor-pointer">
+        <input type="radio" name="status_{{ child.id }}" value="present"
+               {% if existing|get_item:child.id == 'present' or child.id not in existing %}checked{% endif %}
+               class="w-4 h-4 accent-green-600">
+        <span class="text-sm">Был</span>
+    </label>
+    <label class="flex items-center gap-1.5 cursor-pointer">
+        <input type="radio" name="status_{{ child.id }}" value="absent"
+               {% if existing|get_item:child.id == 'absent' %}checked{% endif %}
+               class="w-4 h-4 accent-red-600">
+        <span class="text-sm">Не был</span>
+    </label>
+    <label class="flex items-center gap-1.5 cursor-pointer">
+        <input type="radio" name="status_{{ child.id }}" value="excused_reason"
+               {% if existing|get_item:child.id == 'excused_reason' %}checked{% endif %}
+               class="w-4 h-4 accent-indigo-600">
+        <span class="text-sm">🟦 Уважит.</span>
+    </label>
+</div>
                     </td>
                 </tr>
                 {% endfor %}

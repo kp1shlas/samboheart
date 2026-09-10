@@ -237,6 +237,7 @@ class Attendance(models.Model):
         ('present', 'Был'),
         ('absent', 'Не был'),
         ('excused', 'Пропуск по справке'),
+        ('excused_reason', 'Пропуск по уважительной причине'),
     ]
 
     lesson = models.ForeignKey(

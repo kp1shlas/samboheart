@@ -92,9 +92,10 @@ class CertificateInline(admin.TabularInline):
 class ChildAdmin(admin.ModelAdmin):
     list_display = ['full_name', 'parent', 'birth_date', 'is_active', 'get_last_login_info']
     list_filter = ['is_active', 'enrollments__group']
+    list_editable = ['is_active'] 
     search_fields = ['full_name', 'user__username', 'parent__user__username']
     raw_id_fields = ['parent', 'user']
-    actions = ['import_from_excel', 'export_to_excel']
+    actions = ['import_from_excel', 'export_to_excel', 'activate_selected', 'deactivate_selected']
 
     inlines = [
         ChildEnrollmentInline,
@@ -258,6 +259,36 @@ class ChildAdmin(admin.ModelAdmin):
         wb.save(response)
         
         return response
+
+    @admin.action(description='✅ Включить выбранных')
+    def activate_selected(self, request, queryset):
+        updated = queryset.update(is_active=True)
+        self.message_user(request, f'Включено детей: {updated}.')
+
+    @admin.action(description='⏸️ Отключить выбранных')
+    def deactivate_selected(self, request, queryset):
+        updated = queryset.update(is_active=False)
+        self.message_user(request, f'Отключено детей: {updated}.')
+    
+     readonly_fields = ['get_password_link', 'get_login_history_list', 'get_last_login_info', 'get_current_session']
+    
+    fieldsets = (
+        (None, {'fields': ('full_name', 'birth_date', 'parent', 'user', 'is_active')}),
+        ('🔐 Безопасность', {
+            'fields': ('get_password_link', 'get_last_login_info', 'get_current_session'),
+            'classes': ('collapse',)
+        }),
+    )
+
+    @admin.display(description='Пароль')
+    def get_password_link(self, obj):
+        if not obj.user:
+            return "Нет аккаунта"
+        url = f"/admin/auth/user/{obj.user.id}/password/"
+        return format_html(
+            '<a href="{}" class="button">🔑 Сменить пароль</a>',
+            url
+        )
     
 @admin.register(ChildEnrollment)
 class ChildEnrollmentAdmin(admin.ModelAdmin):
@@ -266,6 +297,17 @@ class ChildEnrollmentAdmin(admin.ModelAdmin):
     list_editable = ['remaining_lessons', 'is_active']
     search_fields = ['child__full_name']
     raw_id_fields = ['child', 'group']
+    actions = ['activate_enrollments', 'deactivate_enrollments']
+
+    @admin.action(description='✅ Включить выбранные записи')
+    def activate_enrollments(self, request, queryset):
+        updated = queryset.update(is_active=True)
+        self.message_user(request, f'Включено записей: {updated}.')
+
+    @admin.action(description='⏸️ Отключить выбранные записи')
+    def deactivate_enrollments(self, request, queryset):
+        updated = queryset.update(is_active=False)
+        self.message_user(request, f'Отключено записей: {updated}.')
 
 
 # ═══════════════════════════════════════════════════════

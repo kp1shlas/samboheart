@@ -1028,22 +1028,38 @@ def attendance_sheet_for_lesson(request, lesson_id):
 
         if action == 'save_attendance':
             for child in children:
-                status = request.POST.get(
-                    f'status_{child.id}', 'present'
-                )
-                should_deduct = (status == 'absent')
-
+                status = request.POST.get(f'status_{child.id}', 'present')
+                
                 # Находим запись ребёнка в этой группе
                 enrollment = ChildEnrollment.objects.filter(
                     child=child, group=lesson.group, is_active=True
                 ).first()
-
-                # Если был с 0 занятий → долг
+                
+                if not enrollment:
+                    continue
+                
+                # Определяем, нужно ли списывать занятие
+                should_deduct = False
                 is_debt = False
-                if status == 'present' and enrollment and enrollment.remaining_lessons <= 0:
-                    if not enrollment.is_free:
+                
+                if status == 'absent':
+                    # Не был → ВСЕГДА списываем (может уйти в минус = долг)
+                    should_deduct = True
+                elif status == 'present':
+                    # Был
+                    if enrollment.remaining_lessons > 0:
+                        # Есть оплаченные занятия → списываем
+                        should_deduct = True
+                    elif not enrollment.is_free:
+                        # Нет занятий и не бесплатный → долг
                         is_debt = True
-
+                        should_deduct = False
+                elif status == 'excused_reason':
+                    # Уважительная причина → НЕ списываем
+                    should_deduct = False
+                    is_debt = False
+                # 'excused' (по справке) тоже не списываем
+                
                 attendance, created = Attendance.objects.get_or_create(
                     lesson=lesson,
                     child=child,
@@ -1054,7 +1070,7 @@ def attendance_sheet_for_lesson(request, lesson_id):
                         'enrollment': enrollment,
                     }
                 )
-
+                
                 if not created:
                     old_deducted = attendance.was_deducted
                     attendance.status = status
@@ -1062,25 +1078,20 @@ def attendance_sheet_for_lesson(request, lesson_id):
                     attendance.is_debt = is_debt
                     attendance.enrollment = enrollment
                     attendance.save()
-
+                    
+                    # 🔥 ИСПРАВЛЕНИЕ: убираем max(0, ...) для роста долга
                     if enrollment:
                         if should_deduct and not old_deducted:
-                            enrollment.remaining_lessons = max(
-                                0, enrollment.remaining_lessons - 1
-                            )
+                            enrollment.remaining_lessons -= 1
                             enrollment.save()
                         elif not should_deduct and old_deducted:
                             enrollment.remaining_lessons += 1
                             enrollment.save()
                 else:
+                    # 🔥 ИСПРАВЛЕНИЕ: убираем max(0, ...) для роста долга
                     if enrollment and should_deduct:
-                        enrollment.remaining_lessons = max(
-                            0, enrollment.remaining_lessons - 1
-                        )
+                        enrollment.remaining_lessons -= 1
                         enrollment.save()
-
-            messages.success(request, 'Посещаемость сохранена.')
-            return redirect('group_lessons', group_id=lesson.group.id)
 
         if action == 'cancel_lesson':
             reason = request.POST.get('cancel_reason', '').strip()
@@ -1206,8 +1217,10 @@ def owner_report(request):
     last_month_end = month_start - timedelta(days=1)
     last_month_start = last_month_end.replace(day=1)
 
+    # Только РЕАЛЬНО оплаченные платежи (status='paid' и paid_at заполнено)
     all_payments = Payment.objects.filter(
-        status='paid', paid_at__isnull=False
+        status='paid', 
+        paid_at__isnull=False
     ).order_by('-paid_at')
 
     monthly = all_payments.filter(paid_at__date__gte=month_start)
