@@ -2167,3 +2167,118 @@ def owner_import_children(request):
 def pricing_view(request):
     """Страница с тарифами и ценами (публичная)"""
     return render(request, 'pricing.html')
+
+
+@owner_required
+def owner_download_passwords(request):
+    """
+    Скачивает последний файл с паролями импортированных детей.
+    Конвертирует CSV в Excel для удобства.
+    """
+    import os
+    import glob
+    from django.conf import settings
+    from django.http import HttpResponse, Http404
+    
+    # Находим все файлы с паролями
+    pattern = os.path.join(settings.BASE_DIR, 'media', 'imported_children_*.csv')
+    files = glob.glob(pattern)
+    
+    if not files:
+        messages.warning(request, 'Файлы с паролями не найдены.')
+        return redirect('owner_dashboard')
+    
+    # Берём самый свежий файл
+    latest_file = max(files, key=os.path.getctime)
+    filename = os.path.basename(latest_file)
+    
+    # Если просят конкретный файл
+    requested = request.GET.get('file')
+    if requested:
+        safe_name = os.path.basename(requested)
+        candidate = os.path.join(settings.BASE_DIR, 'media', safe_name)
+        if candidate in files:
+            latest_file = candidate
+            filename = safe_name
+    
+    # Читаем CSV
+    import csv
+    rows = []
+    with open(latest_file, 'r', encoding='utf-8-sig') as f:
+        reader = csv.reader(f, delimiter=';')
+        for row in reader:
+            rows.append(row)
+    
+    # Конвертируем в Excel
+    try:
+        import openpyxl
+        from openpyxl.styles import Font, PatternFill, Alignment
+        
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = 'Пароли'
+        
+        # Заголовки с оформлением
+        header_fill = PatternFill(
+            start_color='C00000', end_color='C00000', fill_type='solid'
+        )
+        header_font = Font(bold=True, color='FFFFFF')
+        
+        for col, value in enumerate(rows[0] if rows else [], 1):
+            cell = ws.cell(row=1, column=col, value=value)
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = Alignment(horizontal='center')
+        
+        # Данные
+        for row_idx, row in enumerate(rows[1:], 2):
+            for col_idx, value in enumerate(row, 1):
+                ws.cell(row=row_idx, column=col_idx, value=value)
+        
+        # Ширина колонок
+        ws.column_dimensions['A'].width = 35
+        ws.column_dimensions['B'].width = 20
+        ws.column_dimensions['C'].width = 15
+        
+        # Отдаём файл
+        response = HttpResponse(
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+        excel_name = filename.replace('.csv', '.xlsx')
+        response['Content-Disposition'] = f'attachment; filename="{excel_name}"'
+        wb.save(response)
+        return response
+        
+    except ImportError:
+        # Если openpyxl нет — отдаём CSV как есть
+        with open(latest_file, 'rb') as f:
+            response = HttpResponse(f.read(), content_type='text/csv')
+            response['Content-Disposition'] = f'attachment; filename="{filename}"'
+            return response
+
+
+@owner_required
+def owner_password_files_list(request):
+    """Список всех файлов с паролями"""
+    import os
+    import glob
+    from django.conf import settings
+    from datetime import datetime
+    
+    pattern = os.path.join(settings.BASE_DIR, 'media', 'imported_children_*.csv')
+    files = glob.glob(pattern)
+    
+    files_info = []
+    for filepath in files:
+        stat = os.stat(filepath)
+        files_info.append({
+            'name': os.path.basename(filepath),
+            'size': stat.st_size,
+            'created': datetime.fromtimestamp(stat.st_ctime),
+        })
+    
+    files_info.sort(key=lambda x: x['created'], reverse=True)
+    
+    return render(request, 'owner/password_files.html', {
+        'files': files_info,
+    })
