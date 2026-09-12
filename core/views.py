@@ -1011,12 +1011,38 @@ def attendance_sheet_for_lesson(request, lesson_id):
         messages.error(request, 'Нет доступа к этому занятию.')
         return redirect('teacher_dashboard')
 
-    children = Child.objects.filter(
-        is_active=True
-    ).filter(
-        Q(enrollments__group=lesson.group, enrollments__is_active=True) | 
-        Q(specific_lessons=lesson)
-    ).distinct()
+        children = (
+        Child.objects
+        .filter(
+            is_active=True,
+        )
+        .filter(
+            Q(enrollments__group=lesson.group, enrollments__is_active=True) |
+            Q(specific_lessons=lesson)
+        )
+        .distinct()
+        .prefetch_related('enrollments')
+    )
+
+    # 🔥 ФОРМИРУЕМ СПИСОК ДЕТЕЙ С БАЛАНСОМ
+    children_with_balance = []
+    for child in children:
+        # Находим запись в этой группе
+        enrollment = None
+        if lesson.group:
+            enrollment = next(
+                (e for e in child.enrollments.all()
+                 if e.group_id == lesson.group.id and e.is_active),
+                None
+            )
+        balance = enrollment.remaining_lessons if enrollment else 0
+
+        children_with_balance.append({
+            'child': child,
+            'enrollment': enrollment,
+            'balance': balance,
+            'is_free': enrollment.is_free if enrollment else False,
+        })
 
     existing = {
         a.child_id: a.status
@@ -1117,7 +1143,8 @@ def attendance_sheet_for_lesson(request, lesson_id):
 
     return render(request, 'attendance_sheet.html', {
         'group': lesson.group,
-        'children': children,
+        'children_with_balance': children_with_balance,  # 🔥 НОВОЕ
+        'children': children,  # оставляем для совместимости
         'lesson': lesson,
         'existing': existing,
     })

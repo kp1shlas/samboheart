@@ -24,7 +24,9 @@
     <input type="hidden" name="action" value="save_attendance">
 
     <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-        <table class="w-full text-sm">
+    <!-- 🔥 ГОРИЗОНТАЛЬНЫЙ СКРОЛЛ ДЛЯ МОБИЛЬНЫХ -->
+    <div class="overflow-x-auto">
+        <table class="w-full text-sm min-w-[600px]">
             <thead>
                 <tr class="bg-gray-50 text-left text-gray-600">
                     <th class="px-4 py-3 font-medium">Ребёнок</th>
@@ -72,6 +74,7 @@
                 {% endfor %}
             </tbody>
         </table>
+        </div>
     </div>
 
     <div class="flex gap-3 mt-6">
