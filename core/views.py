@@ -1043,8 +1043,8 @@ def attendance_sheet_for_lesson(request, lesson_id):
                 is_debt = False
                 
                 if status == 'absent':
-                    # Не был → ВСЕГДА списываем (может уйти в минус = долг)
-                    should_deduct = True
+                    # Не был → списываем, НО бесплатным детям долг не копим
+                    should_deduct = not enrollment.is_free
                 elif status == 'present':
                     # Был
                     if enrollment.remaining_lessons > 0:
