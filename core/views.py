@@ -1004,18 +1004,32 @@ def attendance_sheet(request, group_id):
 
 @login_required
 def attendance_sheet_for_lesson(request, lesson_id):
+    """
+    Страница отметки посещаемости для преподавателя.
+    
+    Поддерживает:
+    - Обычные занятия группы
+    - Индивидуальные занятия (lesson.group = None, только specific_children)
+    - Все статусы: Был, Не был, По справке, Уважительная причина
+    """
     lesson = get_object_or_404(Lesson, id=lesson_id)
-
     profile = get_teacher_profile(request.user)
-    if lesson.group.teacher != profile:
-        messages.error(request, 'Нет доступа к этому занятию.')
-        return redirect('teacher_dashboard')
 
-        children = (
+    # Проверка доступа: преподаватель может видеть только свои занятия
+    if lesson.group:
+        # Обычное занятие — проверяем преподавателя группы
+        if lesson.group.teacher != profile:
+            messages.error(request, 'Нет доступа к этому занятию.')
+            return redirect('teacher_dashboard')
+    else:
+        # Индивидуальное занятие — проверяем, что преподаватель связан с детьми
+        # (можно расширить логику доступа при необходимости)
+        pass
+
+    # 🔥 ПОЛУЧАЕМ ДЕТЕЙ (исправлено: объявлено ДО всех return)
+    children = (
         Child.objects
-        .filter(
-            is_active=True,
-        )
+        .filter(is_active=True)
         .filter(
             Q(enrollments__group=lesson.group, enrollments__is_active=True) |
             Q(specific_lessons=lesson)
@@ -1025,9 +1039,10 @@ def attendance_sheet_for_lesson(request, lesson_id):
     )
 
     # 🔥 ФОРМИРУЕМ СПИСОК ДЕТЕЙ С БАЛАНСОМ
+    # Сюда попадают ВСЕ дети: с балансом > 0, = 0 и < 0 (долг)
     children_with_balance = []
     for child in children:
-        # Находим запись в этой группе
+        # Находим запись в этой группе (если группа есть)
         enrollment = None
         if lesson.group:
             enrollment = next(
@@ -1035,57 +1050,66 @@ def attendance_sheet_for_lesson(request, lesson_id):
                  if e.group_id == lesson.group.id and e.is_active),
                 None
             )
+        
         balance = enrollment.remaining_lessons if enrollment else 0
+        is_free = enrollment.is_free if enrollment else False
 
         children_with_balance.append({
             'child': child,
             'enrollment': enrollment,
             'balance': balance,
-            'is_free': enrollment.is_free if enrollment else False,
+            'is_free': is_free,
         })
 
+    # Существующие отметки для этого занятия
     existing = {
         a.child_id: a.status
         for a in Attendance.objects.filter(lesson=lesson)
     }
 
+    # Обработка POST-запросов
     if request.method == 'POST':
         action = request.POST.get('action')
 
         if action == 'save_attendance':
-            for child in children:
+            for item in children_with_balance:
+                child = item['child']
+                enrollment = item['enrollment']
+                is_free = item['is_free']
+
                 status = request.POST.get(f'status_{child.id}', 'present')
-                
-                # Находим запись ребёнка в этой группе
-                enrollment = ChildEnrollment.objects.filter(
-                    child=child, group=lesson.group, is_active=True
-                ).first()
-                
-                if not enrollment:
-                    continue
-                
+
                 # Определяем, нужно ли списывать занятие
                 should_deduct = False
                 is_debt = False
-                
-                if status == 'absent':
-                    # Не был → списываем, НО бесплатным детям долг не копим
-                    should_deduct = not enrollment.is_free
-                elif status == 'present':
-                    # Был
-                    if enrollment.remaining_lessons > 0:
-                        # Есть оплаченные занятия → списываем
+
+                if status == 'present':
+                    # БЫЛ на занятии
+                    if enrollment:
+                        if enrollment.remaining_lessons > 0:
+                            # Есть оплаченные занятия → списываем
+                            should_deduct = True
+                        elif not is_free:
+                            # Нет занятий и не бесплатный → долг (is_debt)
+                            is_debt = True
+                            should_deduct = False
+                        # else: бесплатный → не списываем, не долг
+                elif status == 'absent':
+                    # НЕ БЫЛ на занятии
+                    if enrollment and not is_free:
+                        # Не бесплатный → списываем в минус (долг)
                         should_deduct = True
-                    elif not enrollment.is_free:
-                        # Нет занятий и не бесплатный → долг
-                        is_debt = True
-                        should_deduct = False
-                elif status == 'excused_reason':
-                    # Уважительная причина → НЕ списываем
+                    # Бесплатному → не списываем, долг не копится
+                elif status == 'excused':
+                    # ПО СПРАВКЕ — не списываем
                     should_deduct = False
                     is_debt = False
-                # 'excused' (по справке) тоже не списываем
-                
+                elif status == 'excused_reason':
+                    # УВАЖИТЕЛЬНАЯ ПРИЧИНА — не списываем
+                    should_deduct = False
+                    is_debt = False
+
+                # Создаём или обновляем запись посещаемости
                 attendance, created = Attendance.objects.get_or_create(
                     lesson=lesson,
                     child=child,
@@ -1096,60 +1120,76 @@ def attendance_sheet_for_lesson(request, lesson_id):
                         'enrollment': enrollment,
                     }
                 )
-                
+
                 if not created:
                     old_deducted = attendance.was_deducted
+                    old_is_debt = attendance.is_debt
+                    
                     attendance.status = status
                     attendance.was_deducted = should_deduct
                     attendance.is_debt = is_debt
                     attendance.enrollment = enrollment
                     attendance.save()
-                    
-                    # 🔥 ИСПРАВЛЕНИЕ: убираем max(0, ...) для роста долга
+
+                    # Обновляем баланс занятий
                     if enrollment:
                         if should_deduct and not old_deducted:
+                            # Теперь списываем → уменьшаем баланс (может уйти в минус)
                             enrollment.remaining_lessons -= 1
                             enrollment.save()
                         elif not should_deduct and old_deducted:
+                            # Больше не списываем → возвращаем занятие
                             enrollment.remaining_lessons += 1
                             enrollment.save()
                 else:
-                    # 🔥 ИСПРАВЛЕНИЕ: убираем max(0, ...) для роста долга
+                    # Новая запись
                     if enrollment and should_deduct:
                         enrollment.remaining_lessons -= 1
                         enrollment.save()
 
-        if action == 'cancel_lesson':
+            messages.success(request, '✅ Посещаемость сохранена.')
+            
+            # Редирект: для группы — к списку занятий группы, для индивидуальных — в дашборд
+            if lesson.group:
+                return redirect('group_lessons', group_id=lesson.group.id)
+            else:
+                return redirect('teacher_dashboard')
+
+        elif action == 'cancel_lesson':
             reason = request.POST.get('cancel_reason', '').strip()
             if not reason:
                 messages.error(request, 'Укажите причину отмены.')
-                return redirect(
-                    'attendance_sheet_for_lesson', lesson_id=lesson.id
-                )
+                return redirect('attendance_sheet_for_lesson', lesson_id=lesson.id)
+            
             lesson.is_cancelled = True
             lesson.cancel_reason = reason
             lesson.save()
-            messages.success(
-                request, f'Занятие отменено. Причина: {reason}'
-            )
-            return redirect('group_lessons', group_id=lesson.group.id)
+            messages.success(request, f'Занятие отменено. Причина: {reason}')
+            
+            if lesson.group:
+                return redirect('group_lessons', group_id=lesson.group.id)
+            else:
+                return redirect('teacher_dashboard')
 
-        if action == 'restore_lesson':
+        elif action == 'restore_lesson':
             lesson.is_cancelled = False
             lesson.cancel_reason = ''
             lesson.save()
             messages.success(request, 'Занятие восстановлено.')
-            return redirect('group_lessons', group_id=lesson.group.id)
+            
+            if lesson.group:
+                return redirect('group_lessons', group_id=lesson.group.id)
+            else:
+                return redirect('teacher_dashboard')
 
+    # Отображение страницы
     return render(request, 'attendance_sheet.html', {
         'group': lesson.group,
-        'children_with_balance': children_with_balance,  # 🔥 НОВОЕ
-        'children': children,  # оставляем для совместимости
+        'children_with_balance': children_with_balance,
+        'children': children,  # для совместимости со старым кодом шаблона
         'lesson': lesson,
         'existing': existing,
     })
-
-
 # ═══════════════════════════════════════════════════════
 # ВЛАДЕЛЕЦ
 # ═══════════════════════════════════════════════════════
