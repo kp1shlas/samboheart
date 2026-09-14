@@ -5,7 +5,7 @@ from .models import (
     ParentProfile, TeacherProfile, Child, Group,
     Lesson, Attendance, Certificate, ScheduleSlot,
     News, Event, Payment, ChildEnrollment, ChildDiscount, EventRegistration,
-    LoginHistory
+    WebhookLog, LoginHistory
 )
 from django.contrib import admin
 from django.contrib.auth.models import User
