@@ -636,6 +636,7 @@ def pay_for_enrollment(request, enrollment_id, tariff_code):
         return redirect('child_detail', child_id=child.id)
     
     order_id = str(uuid.uuid4())[:8]
+
     payment = Payment.objects.create(
         parent=profile,
         child=child,
@@ -645,6 +646,8 @@ def pay_for_enrollment(request, enrollment_id, tariff_code):
         status='pending',
         method='online',
         note=description,
+        order_id=order_id,
+        bank_payment_id=order_id,  # временно наш ID
     )
     
     service = TochkaPaymentService()
@@ -657,15 +660,16 @@ def pay_for_enrollment(request, enrollment_id, tariff_code):
     if not result['success']:
         payment.status = 'failed'
         payment.save()
-        messages.error(
-            request, f'Ошибка создания платежа: {result["error"]}'
-        )
+        messages.error(request, f'Ошибка создания платежа: {result["error"]}')
         return redirect('child_detail', child_id=child.id)
     
-    payment.bank_payment_id = result.get('payment_id', '')
+    # Сохраняем UUID от Точки в operation_id и bank_payment_id
+    operation_id = result.get('payment_id', '')
+    payment.operation_id = operation_id
+    payment.bank_payment_id = operation_id or order_id
     payment.save()
-    request.session['pending_payment_id'] = payment.id
     
+    request.session['pending_payment_id'] = payment.id
     return redirect(result['url'])
 
 
@@ -1804,122 +1808,88 @@ logger = logging.getLogger(__name__)
 
 @csrf_exempt
 def tochka_webhook(request):
-    """
-    Webhook от Точка Банка с полной обработкой платежей.
-    Возвращает 200 на тестовые запросы, корректно обрабатывает реальные платежи.
-    """
-    logger = logging.getLogger(__name__)
+    """Webhook от Точка Банка с журналом"""
+    from core.models import WebhookLog
     
-    logger.info(f"=== TOCHKA WEBHOOK === {request.method} {request.get_full_path()}")
-    
-    # GET — health check от Точки
     if request.method == 'GET':
-        return JsonResponse({'status': 'ok', 'service': 'samboheart-webhook'}, status=200)
+        return JsonResponse({'status': 'ok'}, status=200)
     
     if request.method != 'POST':
         return JsonResponse({'error': 'Method not allowed'}, status=405)
 
-    # Читаем тело
     try:
         raw_body = request.body.decode('utf-8', errors='replace')
-        logger.info(f"Raw body length: {len(raw_body)}")
-    except Exception as e:
-        logger.error(f"Error reading body: {e}")
+    except Exception:
+        return JsonResponse({'error': 'read error'}, status=400)
+
+    if not raw_body.strip():
         return JsonResponse({'ok': True}, status=200)
-    
-    # Пустое тело — 200 (Точка иногда так проверяет)
-    if not raw_body or raw_body.strip() == '':
-        logger.info("Empty body - returning 200")
-        return JsonResponse({'ok': True}, status=200)
-    
-    # Парсим JSON
+
     try:
         payload = json.loads(raw_body)
-        logger.info(f"Payload: {payload}")
     except json.JSONDecodeError:
-        logger.warning("Not JSON - returning 200")
-        return JsonResponse({'ok': True}, status=200)
-    except Exception as e:
-        logger.error(f"Parse error: {e}")
-        return JsonResponse({'ok': True}, status=200)
-    
-    # Если не словарь или пустой — 200
-    if not isinstance(payload, dict) or len(payload) == 0:
-        logger.info("Empty/invalid payload - returning 200")
-        return JsonResponse({'ok': True}, status=200)
-    
-    # Проверяем тестовые маркеры
-    if payload.get('test') is True or payload.get('type') in ['test', 'ping', 'health']:
-        logger.info("Test webhook - returning 200")
-        return JsonResponse({'ok': True}, status=200)
-    
-    # Ищем payment_id во всех возможных полях
-    payment_id = None
-    for key in ['id', 'payment_id', 'operation_id', 'operationId', 
-                'paymentLinkId', 'bank_payment_id', 'paymentId']:
-        if payload.get(key):
-            payment_id = str(payload[key])
-            break
-    
-    # Проверяем вложенные структуры
-    if not payment_id:
-        for nested_key in ['payment', 'data', 'payload', 'body']:
-            nested = payload.get(nested_key)
-            if isinstance(nested, dict):
-                for key in ['id', 'payment_id', 'operation_id']:
-                    if nested.get(key):
-                        payment_id = str(nested[key])
-                        break
-            if payment_id:
-                break
-    
-    status = payload.get('status') or payload.get('paymentStatus') or payload.get('state')
-    
-    logger.info(f"payment_id: {payment_id}, status: {status}")
-    
-    # Если нет payment_id — считаем health-check
-    if not payment_id:
-        logger.warning("No payment_id - treating as health check")
+        WebhookLog.objects.create(body=raw_body[:2000], result='error')
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    if not isinstance(payload, dict) or not payload:
         return JsonResponse({'ok': True}, status=200)
 
-    # Ищем платёж в БД
-    payment = Payment.objects.filter(bank_payment_id=payment_id).first()
+    # Ищем ID
+    payment_id = (
+        payload.get('id') or payload.get('payment_id') or
+        payload.get('operation_id') or payload.get('operationId') or
+        payload.get('paymentLinkId') or payload.get('bank_payment_id')
+    )
+    status = payload.get('status') or payload.get('paymentStatus')
+
+    if not payment_id:
+        WebhookLog.objects.create(
+            body=raw_body[:2000], result='ignored',
+            status_received=str(status or '')
+        )
+        return JsonResponse({'ok': True}, status=200)
+
+    payment_id = str(payment_id)
+
+    # Ищем по operation_id ИЛИ bank_payment_id
+    payment = Payment.objects.filter(
+        Q(operation_id=payment_id) | Q(bank_payment_id=payment_id)
+    ).first()
 
     if not payment:
-        logger.warning(f"Payment not found for ID: {payment_id}")
-        # Возвращаем 200, чтобы Точка не ретраила
-        return JsonResponse({'ok': True, 'message': 'payment not found'}, status=200)
+        WebhookLog.objects.create(
+            body=raw_body[:2000],
+            payment_id_found=payment_id,
+            status_received=str(status or ''),
+            result='not_found',
+        )
+        return JsonResponse({'error': 'Payment not found'}, status=404)
 
-    # Обрабатываем статус платежа
-    try:
-        if status in ['APPROVED', 'SUCCESS', 'paid', 'success', 'completed', 'PAID', 'Paid']:
-            if payment.status != 'paid':
-                payment.status = 'paid'
-                payment.paid_at = timezone.now()
-                payment.save()
-                logger.info(f"✅ Payment {payment.id} marked as paid")
+    WebhookLog.objects.create(
+        body=raw_body[:2000],
+        payment_id_found=payment_id,
+        status_received=str(status or ''),
+        result='ok',
+        payment=payment,
+    )
 
-                if payment.event_registration:
-                    # Это оплата события
-                    registration = payment.event_registration
-                    registration.status = 'paid'
-                    registration.paid_at = timezone.now()
-                    registration.save()
-                    logger.info(f"✅ Event registration {registration.id} marked as paid")
-                else:
-                    # Это оплата занятий — погашаем долги и начисляем остаток
-                    from core.services.debts import settle_debts_on_payment
-                    settle_debts_on_payment(payment)
-                    logger.info(f"✅ Debts settled for payment {payment.id}")
+    if status in ['APPROVED', 'SUCCESS', 'PAID', 'paid', 'success']:
+        if payment.status != 'paid':
+            payment.status = 'paid'
+            payment.paid_at = timezone.now()
+            payment.save()
 
-        elif status in ['REJECTED', 'CANCELLED', 'failed', 'cancelled', 'canceled', 'FAILED', 'Failed']:
-            if payment.status == 'pending':
-                payment.status = 'failed'
-                payment.save()
-                logger.info(f"❌ Payment {payment.id} marked as failed")
-    except Exception as e:
-        logger.error(f"Error processing payment: {e}", exc_info=True)
-        return JsonResponse({'ok': True, 'error': str(e)}, status=200)
+            if payment.event_registration:
+                payment.event_registration.status = 'paid'
+                payment.event_registration.paid_at = timezone.now()
+                payment.event_registration.save()
+            else:
+                settle_debts_on_payment(payment)
+
+    elif status in ['REJECTED', 'CANCELLED', 'FAILED', 'failed']:
+        if payment.status == 'pending':
+            payment.status = 'failed'
+            payment.save()
 
     return JsonResponse({'ok': True})
 

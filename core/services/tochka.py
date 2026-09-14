@@ -159,7 +159,8 @@ class TochkaPaymentService:
         return {
             'success': True,
             'url': payment_link,
-            'payment_id': operation_id or order_id,
+            'payment_id': operation_id,  # UUID от Точки
+            'order_id': order_id,       # Наш внутренний ID
         }
     
     def check_payment_status(self, operation_id):

@@ -566,3 +566,12 @@ class PaymentAdmin(admin.ModelAdmin):
         if is_newly_paid and not obj.event_registration:
             from core.services.debts import settle_debts_on_payment
             settle_debts_on_payment(obj)
+
+@admin.register(WebhookLog)
+class WebhookLogAdmin(admin.ModelAdmin):
+    list_display = ['created_at', 'result', 'payment_id_found', 'status_received']
+    list_filter = ['result', 'created_at']
+    readonly_fields = ['created_at', 'body', 'payment_id_found', 'status_received', 'result']
+
+    def has_add_permission(self, request):
+        return False

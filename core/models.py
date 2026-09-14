@@ -457,6 +457,11 @@ class Payment(models.Model):
         help_text='ID платежа в Точка Банке'
     )
 
+    order_id = models.CharField(
+        'Наш ID заказа', max_length=50, blank=True, db_index=True,
+        help_text='Генерируется нами до создания платежа в банке'
+    )
+
     parent = models.ForeignKey(
         ParentProfile, on_delete=models.SET_NULL,
         null=True, blank=True,
@@ -524,3 +529,30 @@ class LoginHistory(models.Model):
     def __str__(self):
         time_str = self.timestamp.strftime("%d.%m.%Y %H:%M")
         return f'{self.user.username} - {time_str}'
+
+
+class WebhookLog(models.Model):
+    """Журнал всех webhook от банка"""
+    RESULT_CHOICES = [
+        ('ok', 'Обработан'),
+        ('not_found', 'Платёж не найден'),
+        ('ignored', 'Проигнорирован'),
+        ('error', 'Ошибка'),
+    ]
+    created_at = models.DateTimeField(auto_now_add=True)
+    body = models.TextField('Тело запроса', blank=True)
+    payment_id_found = models.CharField('Найденный ID', max_length=100, blank=True)
+    status_received = models.CharField('Статус от банка', max_length=50, blank=True)
+    result = models.CharField('Результат', max_length=20, choices=RESULT_CHOICES)
+    payment = models.ForeignKey(
+        Payment, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='webhook_logs'
+    )
+
+    class Meta:
+        verbose_name = 'Журнал webhook'
+        verbose_name_plural = 'Журнал webhook'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'{self.created_at:%d.%m %H:%M} — {self.result}'
