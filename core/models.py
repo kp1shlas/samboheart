@@ -59,6 +59,22 @@ class Child(models.Model):
 
     def __str__(self):
         return self.full_name
+    
+    @property
+    def first_name(self):
+        """Имя ребёнка — второе слово в ФИО"""
+        parts = self.full_name.split()
+        if len(parts) >= 2:
+            return parts[1]
+        return self.full_name
+
+    @property
+    def short_name(self):
+        """Коротко для списков: Фамилия И."""
+        parts = self.full_name.split()
+        if len(parts) >= 2:
+            return f'{parts[0]} {parts[1][0]}.'
+        return self.full_name
 
     class Meta:
         verbose_name = 'Ребёнок'
