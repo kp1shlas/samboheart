@@ -166,25 +166,16 @@ class TochkaPaymentService:
     def check_payment_status(self, operation_id):
         """
         Проверяет статус платежа по operationId.
-        
-        Возвращает:
-        {
-            'success': True/False,
-            'status': 'APPROVED' / 'REJECTED' / ...,
-            'error': '...'
-        }
+        Учитывает формат ответа Точки: Data.Operation — массив операций.
         """
         if self.mode == 'mock':
-            return {
-                'success': True,
-                'status': 'APPROVED',
-            }
-        
+            return {'success': True, 'status': 'APPROVED'}
+
         if not self.jwt_token:
             return {'success': False, 'error': 'Не указан TOCHKA_JWT_TOKEN'}
-        
+
         url = f'{self.api_base}/acquiring/v1.0/payments/{operation_id}'
-        
+
         try:
             response = requests.get(
                 url,
@@ -193,28 +184,32 @@ class TochkaPaymentService:
                 verify=False,
             )
         except requests.RequestException as e:
-            return {
-                'success': False,
-                'error': f'Ошибка соединения: {e}',
-            }
-        
+            return {'success': False, 'error': f'Ошибка соединения: {e}'}
+
         if response.status_code != 200:
-            return {
-                'success': False,
-                'error': f'Ошибка API: {response.status_code}',
-            }
-        
+            return {'success': False, 'error': f'Ошибка API: {response.status_code}'}
+
         try:
             data = response.json()
         except ValueError:
-            return {
-                'success': False,
-                'error': 'API вернул некорректный JSON',
-            }
-        
-        status = data.get('Data', {}).get('status', 'UNKNOWN')
-        
+            return {'success': False, 'error': 'API вернул некорректный JSON'}
+
+        data_obj = data.get('Data') or {}
+
+        # Operation может быть массивом, объектом или отсутствовать
+        operation = data_obj.get('Operation')
+        if isinstance(operation, list) and operation:
+            op = operation[0]
+        elif isinstance(operation, dict):
+            op = operation
+        else:
+            op = {}
+
+        status = op.get('status') or data_obj.get('status') or 'UNKNOWN'
+        paid_at = op.get('paidAt') or data_obj.get('paidAt')
+
         return {
             'success': True,
             'status': status,
+            'paid_at': paid_at,
         }
