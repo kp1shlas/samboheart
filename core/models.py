@@ -318,6 +318,12 @@ class Certificate(models.Model):
     file = models.FileField('Файл справки', upload_to='certificates/')
     date_from = models.DateField('Период с')
     date_to = models.DateField('Период по')
+
+    reason = models.CharField(
+        'Причина (болезнь, травма и т.д.)',
+        max_length=300, blank=True
+    )
+
     status = models.CharField(
         'Статус', max_length=20,
         choices=STATUS_CHOICES, default='pending'

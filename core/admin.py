@@ -397,7 +397,7 @@ class AttendanceAdmin(admin.ModelAdmin):
 
 @admin.register(Certificate)
 class CertificateAdmin(admin.ModelAdmin):
-    list_display = ['child', 'date_from', 'date_to', 'status', 'uploaded_at']
+    list_display = ['child', 'date_from', 'date_to', 'reason', 'status', 'uploaded_at']
     list_filter = ['status']
     search_fields = ['child__full_name']
     raw_id_fields = ['child']
