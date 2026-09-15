@@ -320,7 +320,7 @@ def parent_dashboard(request):
                 date__gte=today,
                 date__lte=week_ahead,
             )
-            .select_related('group', 'group__teacher')
+            .select_related('group', 'group__teacher', 'teacher')
             .prefetch_related('specific_children')
             .distinct()
             .order_by('date', 'start_time')

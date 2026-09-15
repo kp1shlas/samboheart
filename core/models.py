@@ -236,6 +236,7 @@ class Lesson(models.Model):
         related_name='individual_lessons',
         verbose_name='Преподаватель (для занятий без группы)'
     )
+    
     # НОВОЕ ПОЛЕ: Отдельные дети, для которых предназначено это занятие
     specific_children = models.ManyToManyField(
         Child, 
@@ -243,6 +244,13 @@ class Lesson(models.Model):
         related_name='specific_lessons',
         verbose_name='Отдельные дети (дополнительно к группе)'
     )
+
+    @property
+    def get_teacher(self):
+        """Возвращает преподавателя: из группы или напрямую"""
+        if self.group and self.group.teacher:
+            return self.group.teacher
+        return self.teacher
 
     def __str__(self):
         group_name = self.group.name if self.group else "Индивидуальное"
