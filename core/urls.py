@@ -67,6 +67,9 @@ urlpatterns = [
      path('owner/passwords/files/',
          views.owner_password_files_list,
          name='owner_password_files'),
+     path('owner/individual-lesson/',
+         views.owner_individual_lesson,
+         name='owner_individual_lesson'),
 
     # ─── Новости и события ─────────────────────────────
      path('news/', views.news_list, name='news_list'),

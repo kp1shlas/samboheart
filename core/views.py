@@ -312,15 +312,17 @@ def parent_dashboard(request):
         
         lessons_qs = (
             Lesson.objects
+            .annotate(spec_count=Count('specific_children'))
             .filter(
-                Q(group__id__in=group_ids) | Q(specific_children__id__in=child_ids),
+                Q(specific_children__id__in=child_ids) |
+                Q(group__id__in=group_ids, spec_count=0),
                 is_cancelled=False,
                 date__gte=today,
                 date__lte=week_ahead,
             )
             .select_related('group', 'group__teacher')
             .prefetch_related('specific_children')
-            .distinct() # КРИТИЧЕСКИ ВАЖНО: убирает дубликаты из-за ManyToMany
+            .distinct()
             .order_by('date', 'start_time')
         )
         
@@ -403,13 +405,16 @@ def child_detail(request, child_id):
         # Ближайшие 3 занятия этой группы
         upcoming_lessons = (
             Lesson.objects
-            .filter(
-                Q(group=group) | Q(specific_children=child),
-                date__gte=today,
-                is_cancelled=False,
-            )
-            .distinct() # Убираем дубли, если ребенок и в группе, и в specific_children
-            .order_by('date', 'start_time')[:3]
+                .annotate(spec_count=Count('specific_children'))
+                .filter(
+                    Q(specific_children=child) |
+                    Q(group__in=group_ids, spec_count=0),
+                    date__gte=today,
+                    is_cancelled=False,
+                )
+                .distinct()
+                .select_related('group')
+                .order_by('date', 'start_time')[:10]
         )
 
         enrollments_with_prices.append({
@@ -512,12 +517,16 @@ def child_dashboard(request):
         # Ближайшие 3 занятия этой группы
         upcoming_lessons = (
             Lesson.objects
-            .filter(
-                group=group,
-                date__gte=today,
-                is_cancelled=False,
-            )
-            .order_by('date', 'start_time')[:3]
+                .annotate(spec_count=Count('specific_children'))
+                .filter(
+                    Q(specific_children=child) |
+                    Q(group__in=group_ids, spec_count=0),
+                    date__gte=today,
+                    is_cancelled=False,
+                )
+                .distinct()
+                .select_related('group')
+                .order_by('date', 'start_time')[:10]
         )
 
         enrollments_with_prices.append({
@@ -969,9 +978,25 @@ def teacher_dashboard(request):
     groups = Group.objects.filter(teacher=profile, is_active=True)
     news = News.objects.filter(is_published=True)[:5]
 
+    today = timezone.now().date()
+
+    # 🔥 Занятия без группы, назначенные этому преподавателю
+    individual_lessons = (
+        Lesson.objects
+        .filter(
+            teacher=profile,
+            group__isnull=True,
+            date__gte=today,
+            is_cancelled=False,
+        )
+        .order_by('date', 'start_time')[:10]
+        .prefetch_related('specific_children')
+    )
+
     return render(request, 'teacher_dashboard.html', {
         'groups': groups,
         'news': news,
+        'individual_lessons': individual_lessons,
     })
 
 
@@ -1021,26 +1046,36 @@ def attendance_sheet_for_lesson(request, lesson_id):
 
     # Проверка доступа: преподаватель может видеть только свои занятия
     if lesson.group:
-        # Обычное занятие — проверяем преподавателя группы
         if lesson.group.teacher != profile:
             messages.error(request, 'Нет доступа к этому занятию.')
             return redirect('teacher_dashboard')
     else:
-        # Индивидуальное занятие — проверяем, что преподаватель связан с детьми
-        # (можно расширить логику доступа при необходимости)
-        pass
+        # Занятие без группы — доступ только у назначенного преподавателя
+        if lesson.teacher != profile:
+            messages.error(request, 'Нет доступа к этому занятию.')
+            return redirect('teacher_dashboard')
 
     # 🔥 ПОЛУЧАЕМ ДЕТЕЙ (исправлено: объявлено ДО всех return)
-    children = (
-        Child.objects
-        .filter(is_active=True)
-        .filter(
-            Q(enrollments__group=lesson.group, enrollments__is_active=True) |
-            Q(specific_lessons=lesson)
+    if lesson.specific_children.exists():
+        # Занятие на конкретных детей — только они в ведомости
+        children = (
+            Child.objects
+            .filter(is_active=True, specific_lessons=lesson)
+            .distinct()
+            .prefetch_related('enrollments')
         )
-        .distinct()
-        .prefetch_related('enrollments')
-    )
+    else:
+        # Обычное занятие группы — вся группа
+        children = (
+            Child.objects
+            .filter(
+                is_active=True,
+                enrollments__group=lesson.group,
+                enrollments__is_active=True,
+            )
+            .distinct()
+            .prefetch_related('enrollments')
+        )
 
     # 🔥 ФОРМИРУЕМ СПИСОК ДЕТЕЙ С БАЛАНСОМ
     # Сюда попадают ВСЕ дети: с балансом > 0, = 0 и < 0 (долг)
@@ -2291,4 +2326,88 @@ def owner_password_files_list(request):
     
     return render(request, 'owner/password_files.html', {
         'files': files_info,
+    })
+
+@owner_required
+def owner_individual_lesson(request):
+    """Создание занятия на конкретных детей с удобным выбором"""
+    if request.method == 'POST':
+        date = request.POST.get('date')
+        start_time = request.POST.get('start_time')
+        duration = request.POST.get('duration', '60')
+        child_ids = request.POST.getlist('children')
+        group_id = request.POST.get('group') or None
+        teacher_id = request.POST.get('teacher') or None
+
+        if not group_id and not teacher_id:
+            messages.error(
+                request,
+                'Для занятия без группы укажите преподавателя.'
+            )
+            return redirect('owner_individual_lesson')
+        if not date or not start_time:
+            messages.error(request, 'Укажите дату и время.')
+            return redirect('owner_individual_lesson')
+
+        if not child_ids:
+            messages.error(request, 'Выберите хотя бы одного ребёнка.')
+            return redirect('owner_individual_lesson')
+
+        lesson = Lesson.objects.create(
+            group_id=int(group_id) if group_id else None,
+            teacher_id=int(teacher_id) if teacher_id else None,
+            date=date,
+            start_time=start_time,
+            is_cancelled=False,
+        )
+        lesson.specific_children.set(child_ids)
+
+        messages.success(
+            request,
+            f'✅ Занятие {date} {start_time} создано '
+            f'для {len(child_ids)} детей.'
+        )
+        return redirect('owner_individual_lesson')
+
+    today = timezone.now().date()
+
+    # Дети, сгруппированные по группам
+    groups_data = []
+    for group in Group.objects.filter(is_active=True).order_by('name'):
+        children = (
+            Child.objects
+            .filter(
+                is_active=True,
+                enrollments__group=group,
+                enrollments__is_active=True,
+            )
+            .distinct()
+            .order_by('full_name')
+        )
+        if children.exists():
+            groups_data.append({'group': group, 'children': children})
+
+    # Дети без активных групп
+    children_without_group = (
+        Child.objects
+        .filter(is_active=True)
+        .exclude(enrollments__is_active=True)
+        .distinct()
+        .order_by('full_name')
+    )
+
+    # Последние индивидуальные занятия
+    recent_individual = (
+        Lesson.objects
+        .filter(group__isnull=True)
+        .order_by('-date')[:10]
+        .prefetch_related('specific_children')
+    )
+
+    return render(request, 'owner/individual_lesson.html', {
+        'groups_data': groups_data,
+        'children_without_group': children_without_group,
+        'recent_individual': recent_individual,
+        'today': today,
+        'teachers': TeacherProfile.objects.all().order_by('user__last_name'),
     })

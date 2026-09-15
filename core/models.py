@@ -230,6 +230,12 @@ class Lesson(models.Model):
     is_cancelled = models.BooleanField('Отменено', default=False)
     cancel_reason = models.CharField('Причина отмены', max_length=300, blank=True)
     
+    teacher = models.ForeignKey(
+        TeacherProfile, on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='individual_lessons',
+        verbose_name='Преподаватель (для занятий без группы)'
+    )
     # НОВОЕ ПОЛЕ: Отдельные дети, для которых предназначено это занятие
     specific_children = models.ManyToManyField(
         Child, 
