@@ -2411,3 +2411,43 @@ def owner_individual_lesson(request):
         'today': today,
         'teachers': TeacherProfile.objects.all().order_by('user__last_name'),
     })
+
+
+@owner_required
+def owner_reports(request):
+    """Отчёты владельца: общий или по группе, с экспортом в Excel."""
+    from datetime import datetime
+    from core.services.reports import build_report, report_to_excel
+
+    today = timezone.now().date()
+
+    def parse_date(value, default):
+        try:
+            return datetime.strptime(value, '%Y-%m-%d').date() if value else default
+        except (ValueError, TypeError):
+            return default
+
+    date_from = parse_date(request.GET.get('date_from'), today.replace(day=1))
+    date_to = parse_date(request.GET.get('date_to'), today)
+    group_id = request.GET.get('group') or None
+
+    if date_from > date_to:
+        date_from, date_to = date_to, date_from
+
+    report = build_report(date_from, date_to, group_id)
+    groups = Group.objects.filter(is_active=True).order_by('name')
+
+    if request.GET.get('export') == 'excel':
+        group_name = 'Все группы'
+        if group_id:
+            g = Group.objects.filter(id=group_id).first()
+            group_name = g.name if g else 'Все группы'
+        return report_to_excel(report, group_name)
+
+    return render(request, 'owner/reports.html', {
+        'report': report,
+        'groups': groups,
+        'date_from': date_from,
+        'date_to': date_to,
+        'group_id': group_id or '',
+    })

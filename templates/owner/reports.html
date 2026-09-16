@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% block title %}Отчёты — Сердце Самбо{% endblock %}
+
+{% block content %}
+<div class="mb-6">
+    <a href="/owner/" class="text-sm text-accent hover:underline">← Назад</a>
+</div>
+
+<h1 class="text-2xl font-bold mb-6">📊 Отчёты</h1>
+
+<!-- Фильтры -->
+<form method="get"
+      class="bg-white rounded-xl shadow-sm border border-gray-100 p-5 mb-6">
+    <div class="grid gap-4 md:grid-cols-4">
+        <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Период с</label>
+            <input type="date" name="date_from" value="{{ date_from|date:'Y-m-d' }}"
+                   class="w-full px-4 py-2.5 border border-gray-300 rounded-xl">
+        </div>
+        <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">по</label>
+            <input type="date" name="date_to" value="{{ date_to|date:'Y-m-d' }}"
+                   class="w-full px-4 py-2.5 border border-gray-300 rounded-xl">
+        </div>
+        <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Группа</label>
+            <select name="group"
+                    class="w-full px-4 py-2.5 border border-gray-300 rounded-xl">
+                <option value="">Все группы (общий отчёт)</option>
+                {% for g in groups %}
+                <option value="{{ g.id }}"
+                        {% if group_id == g.id|stringformat:"s" %}selected{% endif %}>
+                    {{ g.name }}
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="flex items-end gap-2">
+            <button type="submit"
+                    class="bg-primary hover:bg-red-700 text-white px-4 py-2.5 rounded-xl">
+                Показать
+            </button>
+            <button type="submit" name="export" value="excel"
+                    class="bg-green-600 hover:bg-green-700 text-white px-4 py-2.5 rounded-xl">
+                ⬇️ Excel
+            </button>
+        </div>
+    </div>
+</form>
+
+<!-- Таблица -->
+<div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+    <div class="overflow-x-auto">
+        <table class="w-full text-sm min-w-[950px]">
+            <thead>
+                <tr class="bg-gray-50 text-left text-gray-600">
+                    <th class="px-3 py-3">ФИО</th>
+                    <th class="px-3 py-3">Группы</th>
+                    <th class="px-3 py-3 text-center">Посещено</th>
+                    <th class="px-3 py-3 text-center">Пропущено без ув.</th>
+                    <th class="px-3 py-3 text-center">Пропущено по ув.</th>
+                    <th class="px-3 py-3 text-center">Всего</th>
+                    <th class="px-3 py-3 text-center">%</th>
+                    <th class="px-3 py-3 text-right">Оплачено ₽</th>
+                    <th class="px-3 py-3 text-center">Оплачено занятий</th>
+                    <th class="px-3 py-3 text-center">Баланс</th>
+                    <th class="px-3 py-3 text-center">Долг</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100">
+                {% for r in report.rows %}
+                <tr class="hover:bg-gray-50">
+                    <td class="px-3 py-2 font-medium">{{ r.child.full_name }}</td>
+                    <td class="px-3 py-2 text-gray-600">
+                        {{ r.groups }}{% if r.is_free %} 🎁{% endif %}
+                    </td>
+                    <td class="px-3 py-2 text-center text-green-700 font-semibold">{{ r.visited }}</td>
+                    <td class="px-3 py-2 text-center text-red-600">{{ r.missed_unexcused }}</td>
+                    <td class="px-3 py-2 text-center text-blue-600">{{ r.missed_excused }}</td>
+                    <td class="px-3 py-2 text-center">{{ r.total_lessons }}</td>
+                    <td class="px-3 py-2 text-center">
+                        {% if r.rate is not None %}{{ r.rate }}%{% else %}—{% endif %}
+                    </td>
+                    <td class="px-3 py-2 text-right">{{ r.paid_amount|floatformat:0 }} ₽</td>
+                    <td class="px-3 py-2 text-center">{{ r.paid_lessons }}</td>
+                    <td class="px-3 py-2 text-center">{{ r.balance }}</td>
+                    <td class="px-3 py-2 text-center">
+                        {% if r.debt %}
+                        <span class="text-red-600 font-semibold">{{ r.debt }}</span>
+                        {% else %}—{% endif %}
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="11" class="px-3 py-8 text-center text-gray-500">
+                        Нет данных за выбранный период
+                    </td>
+                </tr>
+                {% endfor %}
+                {% if report.rows %}
+                <tr class="bg-gray-100 font-bold">
+                    <td class="px-3 py-2">ИТОГО</td>
+                    <td class="px-3 py-2">{{ report.totals.children_count }} детей</td>
+                    <td class="px-3 py-2 text-center text-green-700">{{ report.totals.visited }}</td>
+                    <td class="px-3 py-2 text-center text-red-600">{{ report.totals.missed_unexcused }}</td>
+                    <td class="px-3 py-2 text-center text-blue-600">{{ report.totals.missed_excused }}</td>
+                    <td class="px-3 py-2 text-center">{{ report.totals.total_lessons }}</td>
+                    <td class="px-3 py-2 text-center"></td>
+                    <td class="px-3 py-2 text-right">{{ report.totals.paid_amount|floatformat:0 }} ₽</td>
+                    <td class="px-3 py-2 text-center">{{ report.totals.paid_lessons }}</td>
+                    <td class="px-3 py-2 text-center"></td>
+                    <td class="px-3 py-2 text-center text-red-600">{{ report.totals.debt }}</td>
+                </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<p class="text-xs text-gray-500 mt-4">
+    * В отчёт входят только активные дети. Отменённые занятия не учитываются.
+    Пропуски «по уважительной» включают справки и уважительные причины.
+</p>
+{% endblock %}

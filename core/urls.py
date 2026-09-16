@@ -70,6 +70,7 @@ urlpatterns = [
      path('owner/individual-lesson/',
          views.owner_individual_lesson,
          name='owner_individual_lesson'),
+     path('owner/reports/', views.owner_reports, name='owner_reports'),
 
     # ─── Новости и события ─────────────────────────────
      path('news/', views.news_list, name='news_list'),
