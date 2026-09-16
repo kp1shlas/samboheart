@@ -1,6 +1,8 @@
 """
 Сервис формирования отчётов владельца.
 """
+from core.models import Child, Attendance, Payment, Group
+
 from django.db.models import Count, Sum, Q
 from django.db.models.functions import Coalesce
 
