@@ -1,9 +1,8 @@
 """
 Сервис формирования отчётов владельца.
 """
-from django.db.models import Count, Sum, Q, Coalesce
-
-from core.models import Child, Attendance, Payment
+from django.db.models import Count, Sum, Q
+from django.db.models.functions import Coalesce
 
 
 def build_report(date_from, date_to, group_id=None):
