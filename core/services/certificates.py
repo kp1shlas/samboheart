@@ -1,7 +1,7 @@
 from django.db import transaction
 from django.utils import timezone
 
-from core.models import Attendance, Certificate
+from core.models import Attendance, Certificate, ChildEnrollment, Lesson
 
 
 def _covered_by_other_certificate(certificate, lesson_date):
@@ -40,14 +40,22 @@ def approve_certificate(certificate):
         if cert.status == 'approved':
             return 0
 
-        records = (
+        # ВАЖНО: select_for_update НЕЛЬЗЯ сочетать с select_related по
+        # nullable-полю (PostgreSQL: "FOR UPDATE cannot be applied to the
+        # nullable side of an outer join"). Сначала блокируем сами записи
+        # посещаемости, затем записи в группу подгружаем отдельным запросом.
+        records = list(
             Attendance.objects.select_for_update()
             .filter(
                 child=cert.child,
                 lesson__date__gte=cert.date_from,
                 lesson__date__lte=cert.date_to,
             )
-            .select_related('enrollment')
+        )
+
+        enrollment_ids = {r.enrollment_id for r in records if r.enrollment_id}
+        enrollments = ChildEnrollment.objects.select_for_update().in_bulk(
+            enrollment_ids
         )
 
         returned = 0
@@ -60,7 +68,7 @@ def approve_certificate(certificate):
             record.status = 'excused'
 
             if record.was_deducted:
-                enrollment = record.enrollment
+                enrollment = enrollments.get(record.enrollment_id)
                 if enrollment is not None:
                     enrollment.remaining_lessons += 1
                     enrollment.save(update_fields=['remaining_lessons'])
@@ -104,7 +112,11 @@ def reject_certificate(certificate):
         if cert.status == 'rejected':
             return 0
 
-        records = (
+        # ВАЖНО: select_for_update НЕЛЬЗЯ сочетать с select_related по
+        # nullable-полю (PostgreSQL: "FOR UPDATE cannot be applied to the
+        # nullable side of an outer join"). Блокируем записи без join,
+        # enrollment и даты занятий подгружаем отдельными запросами.
+        records = list(
             Attendance.objects.select_for_update()
             .filter(
                 child=cert.child,
@@ -112,17 +124,23 @@ def reject_certificate(certificate):
                 lesson__date__lte=cert.date_to,
                 status='excused',
             )
-            .select_related('enrollment')
         )
+
+        enrollment_ids = {r.enrollment_id for r in records if r.enrollment_id}
+        enrollments = ChildEnrollment.objects.select_for_update().in_bulk(
+            enrollment_ids
+        )
+        lessons = Lesson.objects.in_bulk({r.lesson_id for r in records})
 
         deducted = 0
 
         for record in records:
-            if _covered_by_other_certificate(cert, record.lesson.date):
+            lesson = lessons.get(record.lesson_id)
+            if lesson and _covered_by_other_certificate(cert, lesson.date):
                 # Дата принадлежит другой одобренной справке — не трогаем
                 continue
 
-            enrollment = record.enrollment
+            enrollment = enrollments.get(record.enrollment_id)
             record.status = 'absent'
 
             if (

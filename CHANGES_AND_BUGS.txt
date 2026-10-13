@@ -255,6 +255,15 @@ manage.py check — без проблем.
 Проверка: ВСЕ 34 шаблона компилируются (скрипт полной компиляции —
 0 ошибок), manage.py check — чисто. Исправления закоммичены, нужен push.
 
+ДОПОЛНЕНИЕ 2 (13.10.2026): NotSupportedError на /owner/certificates/
+"FOR UPDATE cannot be applied to the nullable side of an outer join".
+Причина: в certificates.py select_for_update() сочетался с
+select_related('enrollment'), а enrollment — nullable FK → PostgreSQL
+делает LEFT OUTER JOIN и запрещает FOR UPDATE по нему (на SQLite не
+ловится). Исправлено: записи блокируются отдельным запросом без join,
+enrollment и lesson подгружаются через in_bulk (отдельные SELECT ... FOR
+UPDATE без join). Логика не менялась, тесты 11/11 проходят.
+
 
   после «Войти») и в мобильном меню. У гостей в навбаре осталась только
   «Войти».
