@@ -51,23 +51,30 @@
 ЧАСТЬ 2. ЗАЛИВКА НА ПРОД ЧЕРЕЗ GIT
 ════════════════════════════════════════════════════════════
 
-2.1. Коммит и пуш (локально, Windows PowerShell)
+2.1. Пуш (локально, Windows PowerShell)
+    ОБНОВЛЕНИЕ 13.10.2026: локальный merge с origin/main (серверная версия —
+    эталон) УЖЕ выполнен и закоммичен: 8b58056. Рабочее дерево чистое,
+    дрифт миграций устранён (makemigrations --check → "No changes detected").
+
     cd C:\projects\attendance_tracker
-    git status          # убедиться, что в списке только нужные файлы
-
-    git add core/admin.py core/services/certificates.py core/services/debts.py ^
-            core/tests.py core/views.py core/urls.py config/settings.py config/urls.py ^
-            templates/base.html templates/login.html templates/attendance_sheet.html ^
-            templates/child_detail.html CHANGES_AND_BUGS.txt DEPLOY_INSTRUCTION.txt
-
-    git status          # ещё раз проверить staged-файлы
-    git commit -m "Fix certificate approval, remove is_debt and public register/VK login"
+    git status                 # должно быть пусто
+    git log --oneline -3       # 8b58056 Merge origin/main... — верхний
     git push origin main
 
-    ВАЖНО: templates/owner/dashboard.html и templates/owner/report.html
-    были изменены ДО этих правок — не добавляйте их в коммит случайно.
-    Если они относятся к этой же задаче — добавьте осознанно отдельным
-    коммитом, если нет — оставьте как есть (git restore <file>).
+    Если git просит ввести сообщение коммита — не нужно, merge уже закоммичен.
+
+2.1.1. ВАЖНО про миграции на проде (сервер добавлял поля без миграции!)
+    Серверная ветка содержала поля Certificate.reason и Lesson.teacher, но
+    миграции для них в git НЕ было. В рамках merge создана миграция:
+        core/migrations/0011_certificate_reason_lesson_teacher.py
+    На проде эти столбцы, скорее всего, УЖЕ существуют (таблицы работают).
+    Поэтому на проде после git pull:
+        python manage.py migrate --plan        # посмотреть план
+        python manage.py migrate               # если 0011 применяется «на
+                                               # чистую» БД — всё ок
+    Если migrate падает с ошибкой «duplicate column name» (столбцы уже есть):
+        python manage.py migrate core 0011 --fake   # просто пометить применённой
+    Остальные миграции (0009, 0010) — штатные, применяются автоматически.
 
 2.2. Деплой на сервере (Linux)
     ssh user@your-server
