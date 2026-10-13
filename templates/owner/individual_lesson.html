@@ -1,0 +1,198 @@
+{% extends "base.html" %}
+{% block title %}Индивидуальное занятие — Сердце Самбо{% endblock %}
+
+{% block content %}
+<div class="mb-6">
+    <a href="/owner/" class="text-sm text-accent hover:underline">← Назад</a>
+</div>
+
+<h1 class="text-2xl font-bold mb-6">🎯 Занятие на конкретных детей</h1>
+
+<form method="post" id="lesson-form">
+    {% csrf_token %}
+
+    <!-- Дата и время -->
+    <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5 mb-6">
+        <h2 class="font-semibold mb-4">📅 Когда</h2>
+        <div class="grid gap-4 md:grid-cols-3">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Дата *</label>
+                <input type="date" name="date" required value="{{ today|date:'Y-m-d' }}"
+                       class="w-full px-4 py-2.5 border border-gray-300 rounded-xl">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Время *</label>
+                <input type="time" name="start_time" required
+                       class="w-full px-4 py-2.5 border border-gray-300 rounded-xl">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">
+                    Привязать к группе (необязательно)
+                </label>
+                <select name="group"
+                        class="w-full px-4 py-2.5 border border-gray-300 rounded-xl">
+                    <option value="">— Без группы (индивидуальное) —</option>
+                    {% for item in groups_data %}
+                    <option value="{{ item.group.id }}">{{ item.group.name }}</option>
+                    {% endfor %}
+                </select>
+                <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">
+        Преподаватель (обязателен без группы)
+    </label>
+    <select name="teacher"
+            class="w-full px-4 py-2.5 border border-gray-300 rounded-xl">
+        <option value="">— Из группы автоматически —</option>
+        {% for t in teachers %}
+        <option value="{{ t.id }}">{{ t }}</option>
+        {% endfor %}
+    </select>
+</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Поиск -->
+    <div class="mb-4">
+        <input type="text" id="child-search" oninput="filterChildren()"
+               placeholder="🔍 Поиск по имени..."
+               class="w-full px-4 py-2.5 border border-gray-300 rounded-xl">
+    </div>
+
+    <!-- Счётчик выбранных -->
+    <div class="mb-4 bg-blue-50 border border-blue-200 rounded-xl p-3 flex
+                justify-between items-center">
+        <span class="text-sm text-blue-800">
+            Выбрано детей: <strong id="selected-count">0</strong>
+        </span>
+        <button type="button" onclick="clearAll()"
+                class="text-sm text-blue-600 hover:underline">
+            Снять все
+        </button>
+    </div>
+
+    <!-- Группы детей -->
+    {% for item in groups_data %}
+    <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5 mb-4">
+        <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center
+                    gap-2 mb-3">
+            <h3 class="font-semibold">
+                🥋 {{ item.group.name }}
+                <span class="text-gray-400 text-sm">({{ item.children|length }})</span>
+            </h3>
+            <div class="flex gap-2 flex-wrap">
+                <button type="button"
+                        onclick="setGroup('{{ item.group.id }}', true)"
+                        class="text-xs bg-green-50 hover:bg-green-100 text-green-700
+                               px-3 py-1.5 rounded-lg">
+                    ✅ Всех
+                </button>
+                <button type="button"
+                        onclick="setGroup('{{ item.group.id }}', false)"
+                        class="text-xs bg-gray-50 hover:bg-gray-100 text-gray-700
+                               px-3 py-1.5 rounded-lg">
+                    ⬜ Никого
+                </button>
+                <button type="button"
+                        onclick="invertGroup('{{ item.group.id }}')"
+                        class="text-xs bg-indigo-50 hover:bg-indigo-100 text-indigo-700
+                               px-3 py-1.5 rounded-lg">
+                    🔄 Кроме отмеченных
+                </button>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+            {% for child in item.children %}
+            <label class="child-label flex items-center gap-2 p-2 border
+                          border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50">
+                <input type="checkbox" name="children" value="{{ child.id }}"
+                       class="child-cb group-{{ item.group.id }} w-4 h-4 accent-red-600"
+                       onchange="updateCount()">
+                <span class="text-sm">{{ child.full_name }}</span>
+            </label>
+            {% endfor %}
+        </div>
+    </div>
+    {% endfor %}
+
+    <!-- Дети без групп -->
+    {% if children_without_group %}
+    <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5 mb-4">
+        <h3 class="font-semibold mb-3">👶 Без группы</h3>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+            {% for child in children_without_group %}
+            <label class="child-label flex items-center gap-2 p-2 border
+                          border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50">
+                <input type="checkbox" name="children" value="{{ child.id }}"
+                       class="child-cb group-none w-4 h-4 accent-red-600"
+                       onchange="updateCount()">
+                <span class="text-sm">{{ child.full_name }}</span>
+            </label>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <button type="submit"
+            class="w-full bg-primary hover:bg-red-700 text-white font-medium
+                   py-3 rounded-xl transition">
+        ✅ Создать занятие
+    </button>
+</form>
+
+<!-- Последние индивидуальные занятия -->
+{% if recent_individual %}
+<div class="mt-8 bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+    <h3 class="font-semibold mb-3">🕐 Последние индивидуальные занятия</h3>
+    <ul class="space-y-2 text-sm">
+        {% for lesson in recent_individual %}
+        <li class="flex justify-between items-center bg-gray-50 rounded-lg p-3">
+            <span>
+                {{ lesson.date|date:"d.m.Y" }} {{ lesson.start_time|time:"H:i" }}
+            </span>
+            <span class="text-gray-600">
+                {{ lesson.specific_children.count }} дет.
+            </span>
+        </li>
+        {% endfor %}
+    </ul>
+</div>
+{% endif %}
+
+<script>
+function setGroup(groupId, state) {
+    document.querySelectorAll('.group-' + groupId).forEach(function(cb) {
+        cb.checked = state;
+    });
+    updateCount();
+}
+
+function invertGroup(groupId) {
+    document.querySelectorAll('.group-' + groupId).forEach(function(cb) {
+        cb.checked = !cb.checked;
+    });
+    updateCount();
+}
+
+function clearAll() {
+    document.querySelectorAll('.child-cb').forEach(function(cb) {
+        cb.checked = false;
+    });
+    updateCount();
+}
+
+function updateCount() {
+    var n = document.querySelectorAll('.child-cb:checked').length;
+    document.getElementById('selected-count').textContent = n;
+}
+
+function filterChildren() {
+    var q = document.getElementById('child-search').value.toLowerCase();
+    document.querySelectorAll('.child-label').forEach(function(label) {
+        var text = label.textContent.toLowerCase();
+        label.style.display = text.indexOf(q) !== -1 ? '' : 'none';
+    });
+}
+</script>
+{% endblock %}

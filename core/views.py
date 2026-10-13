@@ -23,7 +23,7 @@ from .models import (
 from .services.tochka import TochkaPaymentService
 from .services.pricing import calculate_discounted_price
 from django.db import transaction
-from .services.debts import credit_lessons_on_payment
+from .services.debts import settle_debts_on_payment
 from .services.certificates import approve_certificate, reject_certificate
 
 
@@ -310,15 +310,17 @@ def parent_dashboard(request):
         
         lessons_qs = (
             Lesson.objects
+            .annotate(spec_count=Count('specific_children'))
             .filter(
-                Q(group__id__in=group_ids) | Q(specific_children__id__in=child_ids),
+                Q(specific_children__id__in=child_ids) |
+                Q(group__id__in=group_ids, spec_count=0),
                 is_cancelled=False,
                 date__gte=today,
                 date__lte=week_ahead,
             )
-            .select_related('group', 'group__teacher')
+            .select_related('group', 'group__teacher', 'teacher')
             .prefetch_related('specific_children')
-            .distinct() # КРИТИЧЕСКИ ВАЖНО: убирает дубликаты из-за ManyToMany
+            .distinct()
             .order_by('date', 'start_time')
         )
         
@@ -401,13 +403,16 @@ def child_detail(request, child_id):
         # Ближайшие 3 занятия этой группы
         upcoming_lessons = (
             Lesson.objects
-            .filter(
-                Q(group=group) | Q(specific_children=child),
-                date__gte=today,
-                is_cancelled=False,
-            )
-            .distinct() # Убираем дубли, если ребенок и в группе, и в specific_children
-            .order_by('date', 'start_time')[:3]
+                .annotate(spec_count=Count('specific_children'))
+                .filter(
+                    Q(specific_children=child) |
+                    Q(group__in=group_ids, spec_count=0),
+                    date__gte=today,
+                    is_cancelled=False,
+                )
+                .distinct()
+                .select_related('group')
+                .order_by('date', 'start_time')[:10]
         )
 
         enrollments_with_prices.append({
@@ -488,12 +493,16 @@ def child_dashboard(request):
         # Ближайшие 3 занятия этой группы
         upcoming_lessons = (
             Lesson.objects
-            .filter(
-                group=group,
-                date__gte=today,
-                is_cancelled=False,
-            )
-            .order_by('date', 'start_time')[:3]
+                .annotate(spec_count=Count('specific_children'))
+                .filter(
+                    Q(specific_children=child) |
+                    Q(group__in=group_ids, spec_count=0),
+                    date__gte=today,
+                    is_cancelled=False,
+                )
+                .distinct()
+                .select_related('group')
+                .order_by('date', 'start_time')[:10]
         )
 
         enrollments_with_prices.append({
@@ -590,6 +599,7 @@ def pay_for_enrollment(request, enrollment_id, tariff_code):
         return redirect('child_detail', child_id=child.id)
     
     order_id = str(uuid.uuid4())[:8]
+
     payment = Payment.objects.create(
         parent=profile,
         child=child,
@@ -599,6 +609,8 @@ def pay_for_enrollment(request, enrollment_id, tariff_code):
         status='pending',
         method='online',
         note=description,
+        order_id=order_id,
+        bank_payment_id=order_id,  # временно наш ID
     )
     
     service = TochkaPaymentService()
@@ -611,15 +623,16 @@ def pay_for_enrollment(request, enrollment_id, tariff_code):
     if not result['success']:
         payment.status = 'failed'
         payment.save()
-        messages.error(
-            request, f'Ошибка создания платежа: {result["error"]}'
-        )
+        messages.error(request, f'Ошибка создания платежа: {result["error"]}')
         return redirect('child_detail', child_id=child.id)
     
-    payment.bank_payment_id = result.get('payment_id', '')
+    # Сохраняем UUID от Точки в operation_id и bank_payment_id
+    operation_id = result.get('payment_id', '')
+    payment.operation_id = operation_id
+    payment.bank_payment_id = operation_id or order_id
     payment.save()
-    request.session['pending_payment_id'] = payment.id
     
+    request.session['pending_payment_id'] = payment.id
     return redirect(result['url'])
 
 
@@ -660,21 +673,18 @@ def payment_mock_success(request):
             f'«{registration.event.title}».'
         )
     else:
-        # Оплата за занятия — просто начисляем занятия на баланс записи
-        result = credit_lessons_on_payment(payment)
-        credited = result['lessons_credited']
-        if credited == 0:
-            messages.warning(
-                request,
-                'Оплата прошла, но не удалось определить запись в группу '
-                'для зачисления занятий. Обратитесь к администратору.'
-            )
-        else:
-            messages.success(
-                request,
-                f'Оплата {payment.amount} ₽ прошла успешно! '
-                f'Зачислено занятий: {credited}.'
-            )
+        # Оплата за занятия
+        result = settle_debts_on_payment(payment)
+        debts_msg = ''
+        if result['negative_debt_covered'] > 0:
+            debts_msg += f' Погашен долг: {result["negative_debt_covered"]}.'
+        if result['debts_settled'] > 0:
+            debts_msg += f' Погашено занятий в долг: {result["debts_settled"]}.'
+        messages.success(
+            request,
+            f'Оплата {payment.amount} ₽ прошла успешно! '
+            f'Зачислено занятий: {result["remaining_to_add"]}.{debts_msg}'
+        )
 
     if 'pending_payment_id' in request.session:
         del request.session['pending_payment_id']
@@ -737,20 +747,17 @@ def payment_success(request):
             f'Оплата {payment.amount} ₽ прошла успешно!'
         )
     else:
-        result = credit_lessons_on_payment(payment)
-        credited = result['lessons_credited']
-        if credited == 0:
-            messages.warning(
-                request,
-                'Оплата прошла, но не удалось определить запись в группу '
-                'для зачисления занятий. Обратитесь к администратору.'
-            )
-        else:
-            messages.success(
-                request,
-                f'Оплата {payment.amount} ₽ прошла успешно! '
-                f'Зачислено занятий: {credited}.'
-            )
+        result = settle_debts_on_payment(payment)
+        debts_msg = ''
+        if result['negative_debt_covered'] > 0:
+            debts_msg += f' Погашен долг: {result["negative_debt_covered"]}.'
+        if result['debts_settled'] > 0:
+            debts_msg += f' Погашено занятий в долг: {result["debts_settled"]}.'
+        messages.success(
+            request,
+            f'Оплата {payment.amount} ₽ прошла успешно! '
+            f'Зачислено занятий: {result["remaining_to_add"]}.{debts_msg}'
+        )
 
     if 'pending_payment_id' in request.session:
         del request.session['pending_payment_id']
@@ -827,20 +834,17 @@ def payment_mock_confirm(request):
             f'«{registration.event.title}».'
         )
     else:
-        result = credit_lessons_on_payment(payment)
-        credited = result['lessons_credited']
-        if credited == 0:
-            messages.warning(
-                request,
-                '✅ Тестовая оплата прошла, но запись в группу не найдена. '
-                'Занятия не зачислены.'
-            )
-        else:
-            messages.success(
-                request,
-                f'✅ Тестовая оплата {payment.amount} ₽ прошла! '
-                f'Зачислено занятий: {credited}.'
-            )
+        result = settle_debts_on_payment(payment)
+        debts_msg = ''
+        if result['negative_debt_covered'] > 0:
+            debts_msg += f' Погашен долг: {result["negative_debt_covered"]}.'
+        if result['debts_settled'] > 0:
+            debts_msg += f' Погашено в долг: {result["debts_settled"]}.'
+        messages.success(
+            request,
+            f'✅ Тестовая оплата {payment.amount} ₽ прошла! '
+            f'Зачислено занятий: {result["remaining_to_add"]}.{debts_msg}'
+        )
 
     if 'pending_payment_id' in request.session:
         del request.session['pending_payment_id']
@@ -931,9 +935,25 @@ def teacher_dashboard(request):
     groups = Group.objects.filter(teacher=profile, is_active=True)
     news = News.objects.filter(is_published=True)[:5]
 
+    today = timezone.now().date()
+
+    # 🔥 Занятия без группы, назначенные этому преподавателю
+    individual_lessons = (
+        Lesson.objects
+        .filter(
+            teacher=profile,
+            group__isnull=True,
+            date__gte=today,
+            is_cancelled=False,
+        )
+        .order_by('date', 'start_time')[:10]
+        .prefetch_related('specific_children')
+    )
+
     return render(request, 'teacher_dashboard.html', {
         'groups': groups,
         'news': news,
+        'individual_lessons': individual_lessons,
     })
 
 
@@ -970,135 +990,211 @@ def attendance_sheet(request, group_id):
 
 @login_required
 def attendance_sheet_for_lesson(request, lesson_id):
+    """
+    Страница отметки посещаемости для преподавателя.
+    
+    Поддерживает:
+    - Обычные занятия группы
+    - Индивидуальные занятия (lesson.group = None, только specific_children)
+    - Все статусы: Был, Не был, По справке, Уважительная причина
+    """
     lesson = get_object_or_404(Lesson, id=lesson_id)
-
     profile = get_teacher_profile(request.user)
-    if lesson.group.teacher != profile:
-        messages.error(request, 'Нет доступа к этому занятию.')
-        return redirect('teacher_dashboard')
 
-    children = Child.objects.filter(
-        is_active=True
-    ).filter(
-        Q(enrollments__group=lesson.group, enrollments__is_active=True) | 
-        Q(specific_lessons=lesson)
-    ).distinct()
+    # Проверка доступа: преподаватель может видеть только свои занятия
+    if lesson.group:
+        if lesson.group.teacher != profile:
+            messages.error(request, 'Нет доступа к этому занятию.')
+            return redirect('teacher_dashboard')
+    else:
+        # Занятие без группы — доступ только у назначенного преподавателя
+        if lesson.teacher != profile:
+            messages.error(request, 'Нет доступа к этому занятию.')
+            return redirect('teacher_dashboard')
 
+    # 🔥 ПОЛУЧАЕМ ДЕТЕЙ (исправлено: объявлено ДО всех return)
+    if lesson.specific_children.exists():
+        # Занятие на конкретных детей — только они в ведомости
+        children = (
+            Child.objects
+            .filter(is_active=True, specific_lessons=lesson)
+            .distinct()
+            .prefetch_related('enrollments')
+        )
+    else:
+        # Обычное занятие группы — вся группа
+        children = (
+            Child.objects
+            .filter(
+                is_active=True,
+                enrollments__group=lesson.group,
+                enrollments__is_active=True,
+            )
+            .distinct()
+            .prefetch_related('enrollments')
+        )
+
+    # 🔥 ФОРМИРУЕМ СПИСОК ДЕТЕЙ С БАЛАНСОМ
+    # Сюда попадают ВСЕ дети: с балансом > 0, = 0 и < 0 (долг)
+    children_with_balance = []
+    for child in children:
+        # Находим запись в этой группе (если группа есть)
+        enrollment = None
+        if lesson.group:
+            enrollment = next(
+                (e for e in child.enrollments.all()
+                 if e.group_id == lesson.group.id and e.is_active),
+                None
+            )
+        
+        balance = enrollment.remaining_lessons if enrollment else 0
+        is_free = enrollment.is_free if enrollment else False
+
+        children_with_balance.append({
+            'child': child,
+            'enrollment': enrollment,
+            'balance': balance,
+            'is_free': is_free,
+        })
+
+    # Существующие отметки для этого занятия
     existing = {
         a.child_id: a.status
         for a in Attendance.objects.filter(lesson=lesson)
     }
 
+    # Обработка POST-запросов
     if request.method == 'POST':
         action = request.POST.get('action')
 
         if action == 'save_attendance':
-            with transaction.atomic():
-                for child in children:
-                    status = request.POST.get(
-                        f'status_{child.id}', 'present'
-                    )
-                    if status not in ('present', 'absent'):
-                        status = 'present'
+            for item in children_with_balance:
+                child = item['child']
+                enrollment = item['enrollment']
+                is_free = item['is_free']
 
-                    # Находим запись ребёнка в этой группе
-                    enrollment = (
-                        ChildEnrollment.objects.select_for_update()
-                        .filter(child=child, group=lesson.group, is_active=True)
-                        .first()
-                    )
+                status = request.POST.get(f'status_{child.id}', 'present')
 
-                    attendance = (
-                        Attendance.objects.select_for_update()
-                        .filter(lesson=lesson, child=child)
-                        .select_related('enrollment')
-                        .first()
-                    )
+                # Определяем, нужно ли списывать занятие
+                should_deduct = False
+                is_debt = False
 
-                    # 1) Если занятие было списано ранее — возвращаем его.
-                    #    Возвращаем ровно столько, сколько было списано
-                    #    (was_deducted=True), чтобы баланс не «дублировался».
-                    if attendance and attendance.was_deducted:
-                        old_enrollment = attendance.enrollment
-                        if old_enrollment is None and enrollment is not None:
-                            old_enrollment = enrollment
-                        if old_enrollment is not None:
-                            old_enrollment.remaining_lessons += 1
-                            old_enrollment.save(update_fields=['remaining_lessons'])
-                        attendance.was_deducted = False
+                if status == 'present':
+                    # БЫЛ на занятии
+                    if enrollment:
+                        if enrollment.remaining_lessons > 0:
+                            # Есть оплаченные занятия → списываем
+                            should_deduct = True
+                        elif not is_free:
+                            # Нет занятий и не бесплатный → долг (is_debt)
+                            is_debt = True
+                            should_deduct = False
+                        # else: бесплатный → не списываем, не долг
+                elif status == 'absent':
+                    # НЕ БЫЛ на занятии
+                    if enrollment and not is_free:
+                        # Не бесплатный → списываем в минус (долг)
+                        should_deduct = True
+                    # Бесплатному → не списываем, долг не копится
+                elif status == 'excused':
+                    # ПО СПРАВКЕ — не списываем
+                    should_deduct = False
+                    is_debt = False
+                elif status == 'excused_reason':
+                    # УВАЖИТЕЛЬНАЯ ПРИЧИНА — не списываем
+                    should_deduct = False
+                    is_debt = False
 
-                    # 2) Новое списание: только за статус «не был»,
-                    #    только если есть запись в группу и баланс > 0.
-                    #    Баланс НИКОГДА не уходит в минус.
-                    new_deducted = False
-                    if (
-                        status == 'absent'
-                        and enrollment is not None
-                        and not enrollment.is_free
-                        and enrollment.remaining_lessons > 0
-                    ):
+                # Создаём или обновляем запись посещаемости
+                attendance, created = Attendance.objects.get_or_create(
+                    lesson=lesson,
+                    child=child,
+                    defaults={
+                        'status': status,
+                        'was_deducted': should_deduct,
+                        'is_debt': is_debt,
+                        'enrollment': enrollment,
+                    }
+                )
+
+                if not created:
+                    old_deducted = attendance.was_deducted
+                    old_is_debt = attendance.is_debt
+                    
+                    attendance.status = status
+                    attendance.was_deducted = should_deduct
+                    attendance.is_debt = is_debt
+                    attendance.enrollment = enrollment
+                    attendance.save()
+
+                    # Обновляем баланс занятий
+                    if enrollment:
+                        if should_deduct and not old_deducted:
+                            # Теперь списываем → уменьшаем баланс (может уйти в минус)
+                            enrollment.remaining_lessons -= 1
+                            enrollment.save()
+                        elif not should_deduct and old_deducted:
+                            # Больше не списываем → возвращаем занятие
+                            enrollment.remaining_lessons += 1
+                            enrollment.save()
+                else:
+                    # Новая запись
+                    if enrollment and should_deduct:
                         enrollment.remaining_lessons -= 1
-                        enrollment.save(update_fields=['remaining_lessons'])
-                        new_deducted = True
+                        enrollment.save()
 
-                    if attendance:
-                        attendance.status = status
-                        attendance.was_deducted = new_deducted
-                        attendance.is_debt = False  # логика долгов удалена
-                        attendance.enrollment = enrollment
-                        attendance.save()
-                    else:
-                        Attendance.objects.create(
-                            lesson=lesson,
-                            child=child,
-                            status=status,
-                            was_deducted=new_deducted,
-                            is_debt=False,
-                            enrollment=enrollment,
-                        )
+            messages.success(request, '✅ Посещаемость сохранена.')
+            
+            # Редирект: для группы — к списку занятий группы, для индивидуальных — в дашборд
+            if lesson.group:
+                return redirect('group_lessons', group_id=lesson.group.id)
+            else:
+                return redirect('teacher_dashboard')
 
-            messages.success(request, 'Посещаемость сохранена.')
-            return redirect('group_lessons', group_id=lesson.group.id)
-
-        if action == 'cancel_lesson':
+        elif action == 'cancel_lesson':
             reason = request.POST.get('cancel_reason', '').strip()
             if not reason:
                 messages.error(request, 'Укажите причину отмены.')
-                return redirect(
-                    'attendance_sheet_for_lesson', lesson_id=lesson.id
-                )
+                return redirect('attendance_sheet_for_lesson', lesson_id=lesson.id)
+            
             lesson.is_cancelled = True
             lesson.cancel_reason = reason
             lesson.save()
-            messages.success(
-                request, f'Занятие отменено. Причина: {reason}'
-            )
-            return redirect('group_lessons', group_id=lesson.group.id)
+            messages.success(request, f'Занятие отменено. Причина: {reason}')
+            
+            if lesson.group:
+                return redirect('group_lessons', group_id=lesson.group.id)
+            else:
+                return redirect('teacher_dashboard')
 
-        if action == 'restore_lesson':
+        elif action == 'restore_lesson':
             lesson.is_cancelled = False
             lesson.cancel_reason = ''
             lesson.save()
             messages.success(request, 'Занятие восстановлено.')
-            return redirect('group_lessons', group_id=lesson.group.id)
+            
+            if lesson.group:
+                return redirect('group_lessons', group_id=lesson.group.id)
+            else:
+                return redirect('teacher_dashboard')
 
+    # Отображение страницы
     # Словарь «ребёнок → запись в группу» для отображения остатка занятий
     enrollment_map = {
         e.child_id: e
         for e in ChildEnrollment.objects.filter(
             group=lesson.group, is_active=True, child__in=children
         )
-    }
+    } if lesson.group else {}
 
     return render(request, 'attendance_sheet.html', {
         'group': lesson.group,
-        'children': children,
+        'children_with_balance': children_with_balance,
+        'children': children,  # для совместимости со старым кодом шаблона
         'lesson': lesson,
         'existing': existing,
         'enrollment_map': enrollment_map,
     })
-
-
 # ═══════════════════════════════════════════════════════
 # ВЛАДЕЛЕЦ
 # ═══════════════════════════════════════════════════════
@@ -1193,8 +1289,10 @@ def owner_report(request):
     last_month_end = month_start - timedelta(days=1)
     last_month_start = last_month_end.replace(day=1)
 
+    # Только РЕАЛЬНО оплаченные платежи (status='paid' и paid_at заполнено)
     all_payments = Payment.objects.filter(
-        status='paid', paid_at__isnull=False
+        status='paid', 
+        paid_at__isnull=False
     ).order_by('-paid_at')
 
     monthly = all_payments.filter(paid_at__date__gte=month_start)
@@ -1313,21 +1411,18 @@ def owner_cash_payment(request):
             paid_at=timezone.now(),
         )
 
-        result = credit_lessons_on_payment(payment)
-        credited = result['lessons_credited']
-        if credited == 0:
-            messages.warning(
-                request,
-                f'Оплата {amount} ₽ зафиксирована, но запись в группу '
-                f'не найдена — занятия не зачислены.'
-            )
-        else:
-            messages.success(
-                request,
-                f'Оплата {amount} ₽ ({lessons_count} зан.) '
-                f'за {child.full_name} зафиксирована. '
-                f'Зачислено занятий: {credited}.'
-            )
+        result = settle_debts_on_payment(payment)
+        debts_msg = ''
+        if result['negative_debt_covered'] > 0:
+            debts_msg += f' Погашен долг: {result["negative_debt_covered"]}.'
+        if result['debts_settled'] > 0:
+            debts_msg += f' Погашено в долг: {result["debts_settled"]}.'
+        messages.success(
+            request,
+            f'Оплата {amount} ₽ ({lessons_count} зан.) '
+            f'за {child.full_name} зафиксирована. '
+            f'Зачислено занятий: {result["remaining_to_add"]}.{debts_msg}'
+        )
         return redirect('owner_cash_payment')
 
     enrollments = (
@@ -1726,124 +1821,88 @@ logger = logging.getLogger(__name__)
 
 @csrf_exempt
 def tochka_webhook(request):
-    """
-    Webhook от Точка Банка с полной обработкой платежей.
-    Возвращает 200 на тестовые запросы, корректно обрабатывает реальные платежи.
-    """
-    logger = logging.getLogger(__name__)
+    """Webhook от Точка Банка с журналом"""
+    from core.models import WebhookLog
     
-    logger.info(f"=== TOCHKA WEBHOOK === {request.method} {request.get_full_path()}")
-    
-    # GET — health check от Точки
     if request.method == 'GET':
-        return JsonResponse({'status': 'ok', 'service': 'samboheart-webhook'}, status=200)
+        return JsonResponse({'status': 'ok'}, status=200)
     
     if request.method != 'POST':
         return JsonResponse({'error': 'Method not allowed'}, status=405)
 
-    # Читаем тело
     try:
         raw_body = request.body.decode('utf-8', errors='replace')
-        logger.info(f"Raw body length: {len(raw_body)}")
-    except Exception as e:
-        logger.error(f"Error reading body: {e}")
+    except Exception:
+        return JsonResponse({'error': 'read error'}, status=400)
+
+    if not raw_body.strip():
         return JsonResponse({'ok': True}, status=200)
-    
-    # Пустое тело — 200 (Точка иногда так проверяет)
-    if not raw_body or raw_body.strip() == '':
-        logger.info("Empty body - returning 200")
-        return JsonResponse({'ok': True}, status=200)
-    
-    # Парсим JSON
+
     try:
         payload = json.loads(raw_body)
-        logger.info(f"Payload: {payload}")
     except json.JSONDecodeError:
-        logger.warning("Not JSON - returning 200")
-        return JsonResponse({'ok': True}, status=200)
-    except Exception as e:
-        logger.error(f"Parse error: {e}")
-        return JsonResponse({'ok': True}, status=200)
-    
-    # Если не словарь или пустой — 200
-    if not isinstance(payload, dict) or len(payload) == 0:
-        logger.info("Empty/invalid payload - returning 200")
-        return JsonResponse({'ok': True}, status=200)
-    
-    # Проверяем тестовые маркеры
-    if payload.get('test') is True or payload.get('type') in ['test', 'ping', 'health']:
-        logger.info("Test webhook - returning 200")
-        return JsonResponse({'ok': True}, status=200)
-    
-    # Ищем payment_id во всех возможных полях
-    payment_id = None
-    for key in ['id', 'payment_id', 'operation_id', 'operationId', 
-                'paymentLinkId', 'bank_payment_id', 'paymentId']:
-        if payload.get(key):
-            payment_id = str(payload[key])
-            break
-    
-    # Проверяем вложенные структуры
-    if not payment_id:
-        for nested_key in ['payment', 'data', 'payload', 'body']:
-            nested = payload.get(nested_key)
-            if isinstance(nested, dict):
-                for key in ['id', 'payment_id', 'operation_id']:
-                    if nested.get(key):
-                        payment_id = str(nested[key])
-                        break
-            if payment_id:
-                break
-    
-    status = payload.get('status') or payload.get('paymentStatus') or payload.get('state')
-    
-    logger.info(f"payment_id: {payment_id}, status: {status}")
-    
-    # Если нет payment_id — считаем health-check
-    if not payment_id:
-        logger.warning("No payment_id - treating as health check")
+        WebhookLog.objects.create(body=raw_body[:2000], result='error')
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    if not isinstance(payload, dict) or not payload:
         return JsonResponse({'ok': True}, status=200)
 
-    # Ищем платёж в БД
-    payment = Payment.objects.filter(bank_payment_id=payment_id).first()
+    # Ищем ID
+    payment_id = (
+        payload.get('id') or payload.get('payment_id') or
+        payload.get('operation_id') or payload.get('operationId') or
+        payload.get('paymentLinkId') or payload.get('bank_payment_id')
+    )
+    status = payload.get('status') or payload.get('paymentStatus')
+
+    if not payment_id:
+        WebhookLog.objects.create(
+            body=raw_body[:2000], result='ignored',
+            status_received=str(status or '')
+        )
+        return JsonResponse({'ok': True}, status=200)
+
+    payment_id = str(payment_id)
+
+    # Ищем по operation_id ИЛИ bank_payment_id
+    payment = Payment.objects.filter(
+        Q(operation_id=payment_id) | Q(bank_payment_id=payment_id)
+    ).first()
 
     if not payment:
-        logger.warning(f"Payment not found for ID: {payment_id}")
-        # Возвращаем 200, чтобы Точка не ретраила
-        return JsonResponse({'ok': True, 'message': 'payment not found'}, status=200)
+        WebhookLog.objects.create(
+            body=raw_body[:2000],
+            payment_id_found=payment_id,
+            status_received=str(status or ''),
+            result='not_found',
+        )
+        return JsonResponse({'error': 'Payment not found'}, status=404)
 
-    # Обрабатываем статус платежа
-    try:
-        if status in ['APPROVED', 'SUCCESS', 'paid', 'success', 'completed', 'PAID', 'Paid']:
-            if payment.status != 'paid':
-                payment.status = 'paid'
-                payment.paid_at = timezone.now()
-                payment.save()
-                logger.info(f"✅ Payment {payment.id} marked as paid")
+    WebhookLog.objects.create(
+        body=raw_body[:2000],
+        payment_id_found=payment_id,
+        status_received=str(status or ''),
+        result='ok',
+        payment=payment,
+    )
 
-                if payment.event_registration:
-                    # Это оплата события
-                    registration = payment.event_registration
-                    registration.status = 'paid'
-                    registration.paid_at = timezone.now()
-                    registration.save()
-                    logger.info(f"✅ Event registration {registration.id} marked as paid")
-                else:
-                    # Это оплата занятий — начисляем занятия на баланс записи.
-                    # credit_lessons_on_payment идемпотентен: повторный
-                    # вебхук (webhook + возврат пользователя) не начислит дважды.
-                    from core.services.debts import credit_lessons_on_payment as _credit
-                    _credit(payment)
-                    logger.info(f"✅ Lessons credited for payment {payment.id}")
+    if status in ['APPROVED', 'SUCCESS', 'PAID', 'paid', 'success']:
+        if payment.status != 'paid':
+            payment.status = 'paid'
+            payment.paid_at = timezone.now()
+            payment.save()
 
-        elif status in ['REJECTED', 'CANCELLED', 'failed', 'cancelled', 'canceled', 'FAILED', 'Failed']:
-            if payment.status == 'pending':
-                payment.status = 'failed'
-                payment.save()
-                logger.info(f"❌ Payment {payment.id} marked as failed")
-    except Exception as e:
-        logger.error(f"Error processing payment: {e}", exc_info=True)
-        return JsonResponse({'ok': True, 'error': str(e)}, status=200)
+            if payment.event_registration:
+                payment.event_registration.status = 'paid'
+                payment.event_registration.paid_at = timezone.now()
+                payment.event_registration.save()
+            else:
+                settle_debts_on_payment(payment)
+
+    elif status in ['REJECTED', 'CANCELLED', 'FAILED', 'failed']:
+        if payment.status == 'pending':
+            payment.status = 'failed'
+            payment.save()
 
     return JsonResponse({'ok': True})
 
@@ -2131,3 +2190,242 @@ def owner_import_children(request):
 def pricing_view(request):
     """Страница с тарифами и ценами (публичная)"""
     return render(request, 'pricing.html')
+
+
+@owner_required
+def owner_download_passwords(request):
+    """
+    Скачивает последний файл с паролями импортированных детей.
+    Конвертирует CSV в Excel для удобства.
+    """
+    import os
+    import glob
+    from django.conf import settings
+    from django.http import HttpResponse, Http404
+    
+    # Находим все файлы с паролями
+    pattern = os.path.join(settings.BASE_DIR, 'media', 'imported_children_*.csv')
+    files = glob.glob(pattern)
+    
+    if not files:
+        messages.warning(request, 'Файлы с паролями не найдены.')
+        return redirect('owner_dashboard')
+    
+    # Берём самый свежий файл
+    latest_file = max(files, key=os.path.getctime)
+    filename = os.path.basename(latest_file)
+    
+    # Если просят конкретный файл
+    requested = request.GET.get('file')
+    if requested:
+        safe_name = os.path.basename(requested)
+        candidate = os.path.join(settings.BASE_DIR, 'media', safe_name)
+        if candidate in files:
+            latest_file = candidate
+            filename = safe_name
+    
+    # Читаем CSV
+    import csv
+    rows = []
+    with open(latest_file, 'r', encoding='utf-8-sig') as f:
+        reader = csv.reader(f, delimiter=';')
+        for row in reader:
+            rows.append(row)
+    
+    # Конвертируем в Excel
+    try:
+        import openpyxl
+        from openpyxl.styles import Font, PatternFill, Alignment
+        
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = 'Пароли'
+        
+        # Заголовки с оформлением
+        header_fill = PatternFill(
+            start_color='C00000', end_color='C00000', fill_type='solid'
+        )
+        header_font = Font(bold=True, color='FFFFFF')
+        
+        for col, value in enumerate(rows[0] if rows else [], 1):
+            cell = ws.cell(row=1, column=col, value=value)
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = Alignment(horizontal='center')
+        
+        # Данные
+        for row_idx, row in enumerate(rows[1:], 2):
+            for col_idx, value in enumerate(row, 1):
+                ws.cell(row=row_idx, column=col_idx, value=value)
+        
+        # Ширина колонок
+        ws.column_dimensions['A'].width = 35
+        ws.column_dimensions['B'].width = 20
+        ws.column_dimensions['C'].width = 15
+        
+        # Отдаём файл
+        response = HttpResponse(
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+        excel_name = filename.replace('.csv', '.xlsx')
+        response['Content-Disposition'] = f'attachment; filename="{excel_name}"'
+        wb.save(response)
+        return response
+        
+    except ImportError:
+        # Если openpyxl нет — отдаём CSV как есть
+        with open(latest_file, 'rb') as f:
+            response = HttpResponse(f.read(), content_type='text/csv')
+            response['Content-Disposition'] = f'attachment; filename="{filename}"'
+            return response
+
+
+@owner_required
+def owner_password_files_list(request):
+    """Список всех файлов с паролями"""
+    import os
+    import glob
+    from django.conf import settings
+    from datetime import datetime
+    
+    pattern = os.path.join(settings.BASE_DIR, 'media', 'imported_children_*.csv')
+    files = glob.glob(pattern)
+    
+    files_info = []
+    for filepath in files:
+        stat = os.stat(filepath)
+        files_info.append({
+            'name': os.path.basename(filepath),
+            'size': stat.st_size,
+            'created': datetime.fromtimestamp(stat.st_ctime),
+        })
+    
+    files_info.sort(key=lambda x: x['created'], reverse=True)
+    
+    return render(request, 'owner/password_files.html', {
+        'files': files_info,
+    })
+
+@owner_required
+def owner_individual_lesson(request):
+    """Создание занятия на конкретных детей с удобным выбором"""
+    if request.method == 'POST':
+        date = request.POST.get('date')
+        start_time = request.POST.get('start_time')
+        duration = request.POST.get('duration', '60')
+        child_ids = request.POST.getlist('children')
+        group_id = request.POST.get('group') or None
+        teacher_id = request.POST.get('teacher') or None
+
+        if not group_id and not teacher_id:
+            messages.error(
+                request,
+                'Для занятия без группы укажите преподавателя.'
+            )
+            return redirect('owner_individual_lesson')
+        if not date or not start_time:
+            messages.error(request, 'Укажите дату и время.')
+            return redirect('owner_individual_lesson')
+
+        if not child_ids:
+            messages.error(request, 'Выберите хотя бы одного ребёнка.')
+            return redirect('owner_individual_lesson')
+
+        lesson = Lesson.objects.create(
+            group_id=int(group_id) if group_id else None,
+            teacher_id=int(teacher_id) if teacher_id else None,
+            date=date,
+            start_time=start_time,
+            is_cancelled=False,
+        )
+        lesson.specific_children.set(child_ids)
+
+        messages.success(
+            request,
+            f'✅ Занятие {date} {start_time} создано '
+            f'для {len(child_ids)} детей.'
+        )
+        return redirect('owner_individual_lesson')
+
+    today = timezone.now().date()
+
+    # Дети, сгруппированные по группам
+    groups_data = []
+    for group in Group.objects.filter(is_active=True).order_by('name'):
+        children = (
+            Child.objects
+            .filter(
+                is_active=True,
+                enrollments__group=group,
+                enrollments__is_active=True,
+            )
+            .distinct()
+            .order_by('full_name')
+        )
+        if children.exists():
+            groups_data.append({'group': group, 'children': children})
+
+    # Дети без активных групп
+    children_without_group = (
+        Child.objects
+        .filter(is_active=True)
+        .exclude(enrollments__is_active=True)
+        .distinct()
+        .order_by('full_name')
+    )
+
+    # Последние индивидуальные занятия
+    recent_individual = (
+        Lesson.objects
+        .filter(group__isnull=True)
+        .order_by('-date')[:10]
+        .prefetch_related('specific_children')
+    )
+
+    return render(request, 'owner/individual_lesson.html', {
+        'groups_data': groups_data,
+        'children_without_group': children_without_group,
+        'recent_individual': recent_individual,
+        'today': today,
+        'teachers': TeacherProfile.objects.all().order_by('user__last_name'),
+    })
+
+
+@owner_required
+def owner_reports(request):
+    """Отчёты владельца: общий или по группе, с экспортом в Excel."""
+    from datetime import datetime
+    from core.services.reports import build_report, report_to_excel
+
+    today = timezone.now().date()
+
+    def parse_date(value, default):
+        try:
+            return datetime.strptime(value, '%Y-%m-%d').date() if value else default
+        except (ValueError, TypeError):
+            return default
+
+    date_from = parse_date(request.GET.get('date_from'), today.replace(day=1))
+    date_to = parse_date(request.GET.get('date_to'), today)
+    group_id = request.GET.get('group') or None
+
+    if date_from > date_to:
+        date_from, date_to = date_to, date_from
+
+    report = build_report(date_from, date_to, group_id)
+    groups = Group.objects.filter(is_active=True).order_by('name')
+
+    if request.GET.get('export') == 'excel':
+        group_name = 'Все группы'
+        if group_id:
+            g = Group.objects.filter(id=group_id).first()
+            group_name = g.name if g else 'Все группы'
+        return report_to_excel(report, group_name)
+
+    return render(request, 'owner/reports.html', {
+        'report': report,
+        'groups': groups,
+        'date_from': date_from,
+        'date_to': date_to,
+        'group_id': group_id or '',
+    })

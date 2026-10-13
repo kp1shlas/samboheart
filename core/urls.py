@@ -63,6 +63,16 @@ urlpatterns = [
         views.owner_generate_lessons, name='owner_generate_lessons'),
      path('owner/import-children/',
          views.owner_import_children, name='owner_import_children'),
+     path('owner/passwords/download/',
+         views.owner_download_passwords,
+         name='owner_download_passwords'),
+     path('owner/passwords/files/',
+         views.owner_password_files_list,
+         name='owner_password_files'),
+     path('owner/individual-lesson/',
+         views.owner_individual_lesson,
+         name='owner_individual_lesson'),
+     path('owner/reports/', views.owner_reports, name='owner_reports'),
 
     # ─── Новости и события ─────────────────────────────
      path('news/', views.news_list, name='news_list'),

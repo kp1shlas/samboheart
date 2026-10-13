@@ -1,57 +1,57 @@
-from django.db import transaction
-
-from core.models import ChildEnrollment, Payment
-
-
-def credit_lessons_on_payment(payment):
-    """
-    Начисляет оплаченные занятия на баланс записи в группу.
-
-    Логика «занятий в долг» (Attendance.is_debt) УДАЛЕНА:
-    оплата просто увеличивает ChildEnrollment.remaining_lessons.
-
-    Возвращает {'lessons_credited': int, 'enrollment': ChildEnrollment|None}
-    """
-    with transaction.atomic():
-        # Блокируем платёж, чтобы параллельные вызовы (webhook + возврат
-        # пользователя) не начислили занятия дважды
-        payment = (
-            Payment.objects.select_for_update()
-            .select_related('enrollment')
-            .get(pk=payment.pk)
-        )
-
-        enrollment = payment.enrollment
-
-        if enrollment is None:
-            # Если запись не привязана — берём самую свежую активную запись ребёнка
-            enrollment = (
-                ChildEnrollment.objects.select_for_update()
-                .filter(child=payment.child, is_active=True)
-                .order_by('-enrolled_at')
-                .first()
-            )
-
-        if enrollment is None:
-            return {'lessons_credited': 0, 'enrollment': None}
-
-        enrollment.remaining_lessons += payment.lessons_count
-        enrollment.save(update_fields=['remaining_lessons'])
-
-        return {
-            'lessons_credited': payment.lessons_count,
-            'enrollment': enrollment,
-        }
+from core.models import Attendance, ChildEnrollment, Payment
 
 
 def settle_debts_on_payment(payment):
     """
-    Устаревшее имя (обратная совместимость).
-    Теперь просто начисляет занятия — логика долгов удалена.
+    При оплате:
+    1. Сначала покрывает отрицательный баланс (долг за прогулы)
+    2. Потом погашает записи "был без оплаты" (is_debt=True)
+    3. Остаток идёт в баланс записи
     """
-    result = credit_lessons_on_payment(payment)
+    enrollment = payment.enrollment
+    if not enrollment:
+        return {
+            'negative_debt_covered': 0,
+            'debts_settled': 0,
+            'remaining_to_add': payment.lessons_count,
+        }
+
+    lessons_paid = payment.lessons_count
+    remaining_to_add = lessons_paid
+
+    # ШАГ 1: Покрываем отрицательный баланс (долг за прогулы)
+    negative_debt_covered = 0
+    if enrollment.remaining_lessons < 0:
+        debt_amount = abs(enrollment.remaining_lessons)
+        cover_amount = min(remaining_to_add, debt_amount)
+        enrollment.remaining_lessons += cover_amount
+        remaining_to_add -= cover_amount
+        negative_debt_covered = cover_amount
+
+    # ШАГ 2: Погашаем записи "был без оплаты" (is_debt=True)
+    debts = Attendance.objects.filter(
+        enrollment=enrollment,
+        is_debt=True,
+    ).order_by('lesson__date')
+
+    debts_settled = 0
+    for debt in debts:
+        if remaining_to_add <= 0:
+            break
+        debt.is_debt = False
+        debt.was_deducted = True
+        debt.save()
+        debts_settled += 1
+        remaining_to_add -= 1
+
+    # ШАГ 3: Остаток идёт в баланс записи
+    if remaining_to_add > 0:
+        enrollment.remaining_lessons += remaining_to_add
+
+    enrollment.save()
+
     return {
-        'debts_settled': 0,
-        'remaining_to_add': result['lessons_credited'],
-        'lessons_credited': result['lessons_credited'],
+        'negative_debt_covered': negative_debt_covered,
+        'debts_settled': debts_settled,
+        'remaining_to_add': remaining_to_add,
     }

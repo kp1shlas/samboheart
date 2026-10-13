@@ -37,14 +37,14 @@
 <div class="space-y-6">
     {% for child in children %}
     <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-        <div class="flex justify-between items-start mb-4">
-            <div>
-                <h2 class="text-xl font-bold">{{ child.full_name }}</h2>
-                {% if child.birth_date %}
-                <p class="text-sm text-gray-500">
-                    Дата рождения: {{ child.birth_date|date:"d.m.Y" }}
-                </p>
-                {% endif %}
+    <div class="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-3 mb-4">
+        <div class="min-w-0 flex-1">
+            <h2 class="text-xl font-bold break-words">{{ child.full_name }}</h2>
+            {% if child.birth_date %}
+            <p class="text-sm text-gray-500">
+                📅 {{ child.birth_date|date:"d.m.Y" }}
+            </p>
+            {% endif %}
             </div>
             <a href="{% url 'child_detail' child.id %}"
                class="bg-primary hover:bg-red-700 text-white
@@ -133,18 +133,20 @@
                 <p class="font-medium text-gray-800 text-sm mb-1">
                     🥋 {{ item.lesson.group.name }}
                 </p>
-                {% if item.lesson.group.teacher %}
-                <p class="text-xs text-gray-500 mb-2">
-                    👤 {{ item.lesson.group.teacher.specialization|default:"Самбо" }}
-                </p>
-                {% endif %}
-                
+                {% with t=item.lesson.get_teacher %}
+{% if t %}
+<p class="text-xs text-gray-500 mb-2">
+    👤 {{ t.specialization|default:"Самбо" }}
+    {% if t.user.get_full_name %}· {{ t.user.get_full_name }}{% endif %}
+</p>
+{% endif %}
+{% endwith %}
                 {% if item.children %}
                 <div class="flex flex-wrap gap-1">
                     {% for child in item.children %}
                     <span class="inline-flex items-center px-2 py-0.5 bg-blue-50
                                  text-blue-700 rounded text-xs">
-                        👶 {{ child.full_name.split.0 }}
+                        👶 {{ child.first_name }}
                     </span>
                     {% endfor %}
                 </div>

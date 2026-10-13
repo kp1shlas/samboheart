@@ -29,6 +29,30 @@
     У вас пока нет групп. Обратитесь к администратору.
 </div>
 {% endif %}
+{% if individual_lessons %}
+<div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5 mt-6">
+    <h3 class="font-semibold mb-3">🎯 Мои занятия вне групп</h3>
+    <ul class="space-y-2">
+        {% for lesson in individual_lessons %}
+        <li class="flex justify-between items-center bg-gray-50 rounded-lg p-3">
+            <div>
+                <p class="font-medium">
+                    {{ lesson.date|date:"d.m.Y" }} в {{ lesson.start_time|time:"H:i" }}
+                </p>
+                <p class="text-xs text-gray-500">
+                    Детей: {{ lesson.specific_children.count }}
+                </p>
+            </div>
+            <a href="{% url 'attendance_sheet_for_lesson' lesson.id %}"
+               class="text-sm bg-primary hover:bg-red-700 text-white
+                      px-3 py-1.5 rounded-lg">
+                Отметить
+            </a>
+        </li>
+        {% endfor %}
+    </ul>
+</div>
+{% endif %}
 
 <!-- Последние новости -->
 <h2 class="text-lg font-semibold mb-4 mt-8 text-gray-700">

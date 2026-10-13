@@ -59,6 +59,22 @@ class Child(models.Model):
 
     def __str__(self):
         return self.full_name
+    
+    @property
+    def first_name(self):
+        """Имя ребёнка — второе слово в ФИО"""
+        parts = self.full_name.split()
+        if len(parts) >= 2:
+            return parts[1]
+        return self.full_name
+
+    @property
+    def short_name(self):
+        """Коротко для списков: Фамилия И."""
+        parts = self.full_name.split()
+        if len(parts) >= 2:
+            return f'{parts[0]} {parts[1][0]}.'
+        return self.full_name
 
     class Meta:
         verbose_name = 'Ребёнок'
@@ -214,6 +230,13 @@ class Lesson(models.Model):
     is_cancelled = models.BooleanField('Отменено', default=False)
     cancel_reason = models.CharField('Причина отмены', max_length=300, blank=True)
     
+    teacher = models.ForeignKey(
+        TeacherProfile, on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='individual_lessons',
+        verbose_name='Преподаватель (для занятий без группы)'
+    )
+    
     # НОВОЕ ПОЛЕ: Отдельные дети, для которых предназначено это занятие
     specific_children = models.ManyToManyField(
         Child, 
@@ -221,6 +244,13 @@ class Lesson(models.Model):
         related_name='specific_lessons',
         verbose_name='Отдельные дети (дополнительно к группе)'
     )
+
+    @property
+    def get_teacher(self):
+        """Возвращает преподавателя: из группы или напрямую"""
+        if self.group and self.group.teacher:
+            return self.group.teacher
+        return self.teacher
 
     def __str__(self):
         group_name = self.group.name if self.group else "Индивидуальное"
@@ -237,6 +267,7 @@ class Attendance(models.Model):
         ('present', 'Был'),
         ('absent', 'Не был'),
         ('excused', 'Пропуск по справке'),
+        ('excused_reason', 'Пропуск по уважительной причине'),
     ]
 
     lesson = models.ForeignKey(
@@ -287,6 +318,12 @@ class Certificate(models.Model):
     file = models.FileField('Файл справки', upload_to='certificates/')
     date_from = models.DateField('Период с')
     date_to = models.DateField('Период по')
+
+    reason = models.CharField(
+        'Причина (болезнь, травма и т.д.)',
+        max_length=300, blank=True
+    )
+
     status = models.CharField(
         'Статус', max_length=20,
         choices=STATUS_CHOICES, default='pending'
@@ -440,6 +477,11 @@ class Payment(models.Model):
         help_text='ID платежа в Точка Банке'
     )
 
+    order_id = models.CharField(
+        'Наш ID заказа', max_length=50, blank=True, db_index=True,
+        help_text='Генерируется нами до создания платежа в банке'
+    )
+
     parent = models.ForeignKey(
         ParentProfile, on_delete=models.SET_NULL,
         null=True, blank=True,
@@ -507,3 +549,30 @@ class LoginHistory(models.Model):
     def __str__(self):
         time_str = self.timestamp.strftime("%d.%m.%Y %H:%M")
         return f'{self.user.username} - {time_str}'
+
+
+class WebhookLog(models.Model):
+    """Журнал всех webhook от банка"""
+    RESULT_CHOICES = [
+        ('ok', 'Обработан'),
+        ('not_found', 'Платёж не найден'),
+        ('ignored', 'Проигнорирован'),
+        ('error', 'Ошибка'),
+    ]
+    created_at = models.DateTimeField(auto_now_add=True)
+    body = models.TextField('Тело запроса', blank=True)
+    payment_id_found = models.CharField('Найденный ID', max_length=100, blank=True)
+    status_received = models.CharField('Статус от банка', max_length=50, blank=True)
+    result = models.CharField('Результат', max_length=20, choices=RESULT_CHOICES)
+    payment = models.ForeignKey(
+        Payment, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='webhook_logs'
+    )
+
+    class Meta:
+        verbose_name = 'Журнал webhook'
+        verbose_name_plural = 'Журнал webhook'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'{self.created_at:%d.%m %H:%M} — {self.result}'

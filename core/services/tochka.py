@@ -2,7 +2,7 @@
 Сервис оплаты через Точка Банк (интернет-эквайринг)
 
 Режимы:
-- mock       — локальная разработка
+- mock       — локальная разработка (без реальных платежей)
 - sandbox    — песочница Точки
 - production — боевой API
 """
@@ -28,6 +28,7 @@ class TochkaPaymentService:
         self.fail_url = os.getenv('TOCHKA_FAIL_URL', 'https://samboheart.ru/payment/cancel/')
     
     def _headers(self):
+        """Заголовки для запросов к API"""
         return {
             'Authorization': f'Bearer {self.jwt_token}',
             'Content-Type': 'application/json',
@@ -35,12 +36,23 @@ class TochkaPaymentService:
         }
     
     def create_payment_link(self, amount, description, order_id=None):
-        """Создаёт ссылку на оплату через API интернет-эквайринга"""
+        """
+        Создаёт ссылку на оплату через API интернет-эквайринга Точки.
+        
+        Возвращает:
+        {
+            'success': True/False,
+            'url': 'https://...',  # Ссылка на оплату
+            'payment_id': '...',    # ID операции в банке
+            'error': '...'          # Текст ошибки, если не успех
+        }
+        """
         if order_id is None:
             order_id = str(uuid.uuid4())[:8]
         
         amount = Decimal(amount)
         
+        # Mock-режим для локальной разработки
         if self.mode == 'mock' or not self.jwt_token:
             return self._create_mock_payment(amount, description, order_id)
         
@@ -48,7 +60,7 @@ class TochkaPaymentService:
     
     def _create_mock_payment(self, amount, description, order_id):
         """Mock-оплата для локальной разработки"""
-        mock_url = 'https://samboheart.ru/payment/mock/'
+        mock_url = '/payment/mock/'
         return {
             'success': True,
             'url': mock_url,
@@ -56,7 +68,7 @@ class TochkaPaymentService:
         }
     
     def _create_real_payment(self, amount, description, order_id):
-        """Создание платёжной ссылкики через API интернет-эквайринга"""
+        """Создание платёжной ссылки через API интернет-эквайринга"""
         
         if not self.jwt_token:
             return {'success': False, 'error': 'Не указан TOCHKA_JWT_TOKEN'}
@@ -67,7 +79,7 @@ class TochkaPaymentService:
         if not self.customer_code:
             return {'success': False, 'error': 'Не указан TOCHKA_CUSTOMER_CODE'}
         
-        # Транслитерируем описание
+        # Транслитерируем описание для избежания проблем с кодировкой
         translit_map = {
             'а': 'a', 'б': 'b', 'в': 'v', 'г': 'g', 'д': 'd', 'е': 'e',
             'ё': 'yo', 'ж': 'zh', 'з': 'z', 'и': 'i', 'й': 'y', 'к': 'k',
@@ -122,10 +134,17 @@ class TochkaPaymentService:
         if response.status_code not in [200, 201]:
             return {
                 'success': False,
-                'error': f'Ошибка API: {response.status_code} {response.text[:500]}',
+                'error': f'Ошибка API: {response.status_code} {response.text[:300]}',
             }
         
-        data = response.json()
+        try:
+            data = response.json()
+        except ValueError:
+            return {
+                'success': False,
+                'error': 'API вернул некорректный JSON',
+            }
+        
         payment_data = data.get('Data', {})
         
         payment_link = payment_data.get('paymentLink')
@@ -140,22 +159,23 @@ class TochkaPaymentService:
         return {
             'success': True,
             'url': payment_link,
-            'payment_id': operation_id or order_id,
+            'payment_id': operation_id,  # UUID от Точки
+            'order_id': order_id,       # Наш внутренний ID
         }
     
     def check_payment_status(self, operation_id):
-        """Проверяет статус платежа по operationId"""
+        """
+        Проверяет статус платежа по operationId.
+        Учитывает формат ответа Точки: Data.Operation — массив операций.
+        """
         if self.mode == 'mock':
-            return {
-                'success': True,
-                'status': 'APPROVED',
-            }
-        
+            return {'success': True, 'status': 'APPROVED'}
+
         if not self.jwt_token:
             return {'success': False, 'error': 'Не указан TOCHKA_JWT_TOKEN'}
-        
+
         url = f'{self.api_base}/acquiring/v1.0/payments/{operation_id}'
-        
+
         try:
             response = requests.get(
                 url,
@@ -164,21 +184,32 @@ class TochkaPaymentService:
                 verify=False,
             )
         except requests.RequestException as e:
-            return {
-                'success': False,
-                'error': f'Ошибка соединения: {e}',
-            }
-        
+            return {'success': False, 'error': f'Ошибка соединения: {e}'}
+
         if response.status_code != 200:
-            return {
-                'success': False,
-                'error': f'Ошибка API: {response.status_code}',
-            }
-        
-        data = response.json()
-        status = data.get('Data', {}).get('status', 'UNKNOWN')
-        
+            return {'success': False, 'error': f'Ошибка API: {response.status_code}'}
+
+        try:
+            data = response.json()
+        except ValueError:
+            return {'success': False, 'error': 'API вернул некорректный JSON'}
+
+        data_obj = data.get('Data') or {}
+
+        # Operation может быть массивом, объектом или отсутствовать
+        operation = data_obj.get('Operation')
+        if isinstance(operation, list) and operation:
+            op = operation[0]
+        elif isinstance(operation, dict):
+            op = operation
+        else:
+            op = {}
+
+        status = op.get('status') or data_obj.get('status') or 'UNKNOWN'
+        paid_at = op.get('paidAt') or data_obj.get('paidAt')
+
         return {
             'success': True,
             'status': status,
+            'paid_at': paid_at,
         }

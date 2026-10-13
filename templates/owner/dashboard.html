@@ -79,11 +79,11 @@
         <p class="font-semibold text-sm">Группы</p>
     </a>
 
-    <a href="/owner/report/"
+    <a href="/owner/reports/"
        class="bg-white rounded-xl shadow-sm border border-gray-100
               p-4 hover:shadow-md transition text-center">
         <div class="text-3xl mb-2">📊</div>
-        <p class="font-semibold text-sm">Отчёт</p>
+        <p class="font-semibold text-sm">Отчёты</p>
     </a>
     <a href="{% url 'owner_import_children' %}"
    class="bg-white rounded-xl shadow-sm border border-gray-100 p-6
@@ -97,6 +97,20 @@
             <p class="text-sm text-gray-500">Загрузить из Excel</p>
         </div>
     </div>
+        <a href="{% url 'owner_password_files' %}"
+       class="bg-white rounded-xl shadow-sm border border-gray-100
+              p-4 hover:shadow-md transition text-center">
+        <div class="text-3xl mb-2">🔑</div>
+        <p class="font-semibold text-sm">Пароли детей</p>
+        <p class="text-xs text-gray-500 mt-1">Скачать Excel</p>
+    </a>
+        <a href="{% url 'owner_individual_lesson' %}"
+       class="bg-white rounded-xl shadow-sm border border-gray-100
+              p-4 hover:shadow-md transition text-center">
+        <div class="text-3xl mb-2">🎯</div>
+        <p class="font-semibold text-sm">Индивид. занятие</p>
+        <p class="text-xs text-gray-500 mt-1">Выбор детей</p>
+    </a>
 </a>
 </div>
 

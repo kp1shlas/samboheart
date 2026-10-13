@@ -7,7 +7,7 @@ from core.models import (
     Lesson, ParentProfile, TeacherProfile, User,
 )
 from core.services.certificates import approve_certificate, reject_certificate
-from core.services.debts import credit_lessons_on_payment, settle_debts_on_payment
+from core.services.debts import settle_debts_on_payment
 
 
 class CertificateServiceTests(TestCase):
@@ -139,7 +139,7 @@ class CertificateServiceTests(TestCase):
 
 
 class PaymentCreditTests(TestCase):
-    """Тесты начисления занятий при оплате (логика is_debt удалена)."""
+    """Тесты начисления занятий при оплате (серверная логика долгов)."""
 
     def setUp(self):
         from core.models import Payment
@@ -162,17 +162,44 @@ class PaymentCreditTests(TestCase):
         )
 
     def test_credit_adds_lessons(self):
-        result = credit_lessons_on_payment(self.payment)
-        self.enrollment.refresh_from_db()
-        self.assertEqual(result['lessons_credited'], 8)
-        self.assertEqual(self.enrollment.remaining_lessons, 8)
-
-    def test_legacy_name_still_works(self):
-        """settle_debts_on_payment — совместимость, но без долгов."""
         result = settle_debts_on_payment(self.payment)
         self.enrollment.refresh_from_db()
-        self.assertEqual(result['debts_settled'], 0)
+        self.assertEqual(result['remaining_to_add'], 8)
         self.assertEqual(self.enrollment.remaining_lessons, 8)
+
+    def test_negative_balance_is_covered_first(self):
+        """Оплата сначала покрывает отрицательный баланс (долг за прогулы)."""
+        self.enrollment.remaining_lessons = -3
+        self.enrollment.save()
+
+        result = settle_debts_on_payment(self.payment)
+
+        self.enrollment.refresh_from_db()
+        self.assertEqual(result['negative_debt_covered'], 3)
+        # 8 оплачено → 3 на покрытие долга, 5 в баланс; −3 + 3 + 5 = 5
+        self.assertEqual(result['remaining_to_add'], 5)
+        self.assertEqual(self.enrollment.remaining_lessons, 5)
+
+    def test_is_debt_records_settled(self):
+        """Записи is_debt=True погашаются за счёт оплаты."""
+        from core.models import Attendance, Lesson, Payment
+        lesson = Lesson.objects.create(
+            group=self.group, date=date(2026, 1, 5), start_time=time(10, 0)
+        )
+        Attendance.objects.create(
+            lesson=lesson, child=self.child, enrollment=self.enrollment,
+            status='present', was_deducted=False, is_debt=True,
+        )
+
+        result = settle_debts_on_payment(self.payment)
+
+        self.enrollment.refresh_from_db()
+        self.assertEqual(result['debts_settled'], 1)
+        # 8 оплачено − 1 долг = 7 в баланс
+        self.assertEqual(self.enrollment.remaining_lessons, 7)
+        record = Attendance.objects.get(lesson=lesson, child=self.child)
+        self.assertFalse(record.is_debt)
+        self.assertTrue(record.was_deducted)
 
     def test_no_enrollment_found(self):
         """Платёж без записи в группу не роняет ошибку."""
@@ -181,7 +208,7 @@ class PaymentCreditTests(TestCase):
             parent=self.parent, child=self.child, enrollment=None,
             amount=1000, lessons_count=1, status='paid', method='cash',
         )
-        ChildEnrollment.objects.all().delete()
-        result = credit_lessons_on_payment(payment)
-        self.assertEqual(result['lessons_credited'], 0)
+        result = settle_debts_on_payment(payment)
+        self.assertEqual(result['remaining_to_add'], 1)
+        self.assertEqual(result['negative_debt_covered'], 0)
 
