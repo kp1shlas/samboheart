@@ -1,40 +1,57 @@
-from core.models import Attendance, ChildEnrollment, Payment
+from django.db import transaction
+
+from core.models import ChildEnrollment, Payment
+
+
+def credit_lessons_on_payment(payment):
+    """
+    Начисляет оплаченные занятия на баланс записи в группу.
+
+    Логика «занятий в долг» (Attendance.is_debt) УДАЛЕНА:
+    оплата просто увеличивает ChildEnrollment.remaining_lessons.
+
+    Возвращает {'lessons_credited': int, 'enrollment': ChildEnrollment|None}
+    """
+    with transaction.atomic():
+        # Блокируем платёж, чтобы параллельные вызовы (webhook + возврат
+        # пользователя) не начислили занятия дважды
+        payment = (
+            Payment.objects.select_for_update()
+            .select_related('enrollment')
+            .get(pk=payment.pk)
+        )
+
+        enrollment = payment.enrollment
+
+        if enrollment is None:
+            # Если запись не привязана — берём самую свежую активную запись ребёнка
+            enrollment = (
+                ChildEnrollment.objects.select_for_update()
+                .filter(child=payment.child, is_active=True)
+                .order_by('-enrolled_at')
+                .first()
+            )
+
+        if enrollment is None:
+            return {'lessons_credited': 0, 'enrollment': None}
+
+        enrollment.remaining_lessons += payment.lessons_count
+        enrollment.save(update_fields=['remaining_lessons'])
+
+        return {
+            'lessons_credited': payment.lessons_count,
+            'enrollment': enrollment,
+        }
 
 
 def settle_debts_on_payment(payment):
     """
-    При оплате сначала списывает занятия "в долг" для данной записи,
-    потом начисляет остаток.
+    Устаревшее имя (обратная совместимость).
+    Теперь просто начисляет занятия — логика долгов удалена.
     """
-    enrollment = payment.enrollment
-    lessons_paid = payment.lessons_count
-    
-    # Находим все долги этой записи
-    debts = Attendance.objects.filter(
-        enrollment=enrollment,
-        is_debt=True,
-    ).order_by('lesson__date')
-    
-    debts_settled = 0
-    remaining_to_add = lessons_paid
-    
-    for debt in debts:
-        if remaining_to_add <= 0:
-            break
-        
-        # Погашаем долг
-        debt.is_debt = False
-        debt.was_deducted = True
-        debt.save()
-        debts_settled += 1
-        remaining_to_add -= 1
-    
-    # Остаток идёт в баланс записи
-    if remaining_to_add > 0:
-        enrollment.remaining_lessons += remaining_to_add
-        enrollment.save()
-    
+    result = credit_lessons_on_payment(payment)
     return {
-        'debts_settled': debts_settled,
-        'remaining_to_add': remaining_to_add,
+        'debts_settled': 0,
+        'remaining_to_add': result['lessons_credited'],
+        'lessons_credited': result['lessons_credited'],
     }

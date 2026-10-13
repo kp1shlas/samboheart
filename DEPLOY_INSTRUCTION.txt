@@ -1,0 +1,135 @@
+ИНСТРУКЦИЯ: ТЕСТИРОВАНИЕ ЛОКАЛЬНО И ДЕПЛОЙ НА ПРОД ЧЕРЕЗ GIT
+Проект: attendance_tracker (Django 6.1) · Репозиторий: github.com/kp1shlas/samboheart
+Ветка: main (единственная) · Прод: VPS + gunicorn + PostgreSQL
+
+════════════════════════════════════════════════════════════
+ЧАСТЬ 1. ТЕСТИРОВАНИЕ ЛОКАЛЬНО (Windows)
+════════════════════════════════════════════════════════════
+
+1.1. Окружение
+    cd C:\projects\attendance_tracker
+    .\venv\Scripts\Activate.ps1
+    pip install -r requirements.txt     # только если зависимости менялись
+
+1.2. Автотесты (главная проверка исправлений справок/баланса)
+    python manage.py check              # «System check identified no issues»
+    python manage.py test core -v 2     # 10 тестов, в конце: OK
+
+1.3. Ручной смоук-тест в браузере
+    python manage.py runserver
+    → http://127.0.0.1:8000/
+
+    Проверка А. Справки (логика исправлена):
+    1) Владелец → Справки → «Одобрить» справку ребёнка с известным балансом:
+       сообщение «Возвращено занятий: N» (только реально списанные),
+       остаток в записи в группу вырос на N.
+    2) Повторное «Одобрить» той же справки: «Занятия для возврата не
+       найдены», баланс НЕ меняется.
+    3) «Отклонить»: баланс уменьшается, но не ниже 0; повторное
+       «Отклонить» — без изменений.
+
+    Проверка Б. Табель (двойная логика и минус убраны):
+    4) Преподаватель → занятие → «Не был» при балансе 0 → сохранить →
+       баланс остаётся 0 (нет долга, нет минуса).
+    5) Поставить «Был» → баланс не «дублируется».
+
+    Проверка В. Оплата (логика is_debt удалена):
+    6) Кассовая оплата (Владелец → Оплата наличными): баланс += число
+       занятий ровно один раз.
+
+    Проверка Г. Навигация (регистрация и VK убраны):
+    7) Гость: в верхней панели и в мобильном меню только «Войти»,
+       кнопки «Регистрация» нет.
+    8) /login/: только форма входа — без «Войти через ВКонтакте»,
+       без «Зарегистрироваться», без заглушки «скоро будет доступен».
+    9) /oauth/login/vk-oauth2/ → 404 (URL отключён).
+
+    Примечание: чистая БД для тестов — python manage.py migrate &&
+    python manage.py seed_data (ТОЛЬКО локально, на проде не выполнять!).
+
+════════════════════════════════════════════════════════════
+ЧАСТЬ 2. ЗАЛИВКА НА ПРОД ЧЕРЕЗ GIT
+════════════════════════════════════════════════════════════
+
+2.1. Коммит и пуш (локально, Windows PowerShell)
+    cd C:\projects\attendance_tracker
+    git status          # убедиться, что в списке только нужные файлы
+
+    git add core/admin.py core/services/certificates.py core/services/debts.py ^
+            core/tests.py core/views.py core/urls.py config/settings.py config/urls.py ^
+            templates/base.html templates/login.html templates/attendance_sheet.html ^
+            templates/child_detail.html CHANGES_AND_BUGS.txt DEPLOY_INSTRUCTION.txt
+
+    git status          # ещё раз проверить staged-файлы
+    git commit -m "Fix certificate approval, remove is_debt and public register/VK login"
+    git push origin main
+
+    ВАЖНО: templates/owner/dashboard.html и templates/owner/report.html
+    были изменены ДО этих правок — не добавляйте их в коммит случайно.
+    Если они относятся к этой же задаче — добавьте осознанно отдельным
+    коммитом, если нет — оставьте как есть (git restore <file>).
+
+2.2. Деплой на сервере (Linux)
+    ssh user@your-server
+    cd /path/to/project
+    git stash -u                       # на случай локальных правок на сервере
+    git pull origin main
+
+    source venv/bin/activate
+    pip install -r requirements.txt
+
+    # БЭКАП БД (обязательно перед обновлением на живой БД!)
+    pg_dump $DB_NAME > /backup/samboheart_$(date +%Y%m%d_%H%M).sql
+
+    # Миграции (для этих правок их НЕТ, но штатно):
+    python manage.py migrate --plan    # посмотреть; ожидаемо пусто
+    python manage.py migrate
+
+    python manage.py collectstatic --noinput
+    sudo systemctl restart gunicorn    # или reload — как у вас настроено
+    sudo journalctl -u gunicorn -n 50 --no-pager   # проверить логи
+
+2.3. Проверка на проде
+    - python manage.py check
+    - сценарии 1-9 из раздела 1.3 (справки, табель, оплата, навигация)
+    - вебхук Точки: GET на /payment/tochka/webhook/ → {"status": "ok"}
+
+2.4. ОТКАТ, если что-то пошло не так
+    cd /path/to/project
+    git log --oneline -3               # найти проблемный коммит
+    git revert <sha>                   # безопасный откат (история не переписывается)
+    git push origin main
+    # на сервере: git pull && systemctl restart gunicorn
+    # при проблемах с БД — восстановить pg_dump из п. 2.2
+
+    Откат безопасен по данным: эти правки не мигрируют и не удаляют столбцы
+    (is_debt и таблицы social_django остаются в БД). Откат вернёт только
+    старую логику/кнопки.
+
+════════════════════════════════════════════════════════════
+ЧАСТЬ 3. ЧТО ИЗМЕНЕНО В ЭТОМ ОБНОВЛЕНИИ (кроме справок)
+════════════════════════════════════════════════════════════
+
+- templates/base.html: убрана кнопка «Регистрация» для гостей в десктопной
+  и в мобильной панели (осталась только «Войти»).
+- templates/login.html: убрана кнопка «Войти через ВКонтакте», заглушка
+  «скоро будет доступен» и блок «Нет аккаунта? Зарегистрироваться».
+- config/settings.py: из AUTHENTICATION_BACKENDS удалён VK OAuth2
+  (вход через VK невозможен). Приложение social_django ОСТАВЛЕНО в
+  INSTALLED_APPS — таблицы в БД нетронуты, миграции не требуются.
+  Блок SOCIAL_AUTH_* настроек оставлен (инертен, можно удалить позже).
+- config/urls.py и core/urls.py: убраны оба include social_django.urls
+  (оба подключали /oauth/) → /oauth/... отдаёт 404.
+- core/views.py: login_view больше не передаёт vk_enabled.
+
+НЕ тронуто (осознанно):
+- Страница /register/ и view register_view работают — убраны только
+  кнопки. Если нужно закрыть и прямой доступ — скажите, добавим редирект.
+- Кнопки «Записаться онлайн» на home.html и pricing.html ведут на
+  /register/ — они НЕ относятся к верхней панели и гостевому входу,
+  поэтому оставлены. Рекомендация: заменить их на «Написать в VK»
+  (ссылка https://vk.com/write-238020416), если публичная регистрация
+  больше не нужна.
+- Ссылки «ВКонтакте» в футере/контактах — это обычные ссылки на сообщество
+  (vk.com/sambo_heart), а не вход — они оставлены.
+

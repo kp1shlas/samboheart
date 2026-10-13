@@ -131,7 +131,9 @@ LOGIN_REDIRECT_URL = '/dashboard/'
 LOGOUT_REDIRECT_URL = '/login/'
 
 AUTHENTICATION_BACKENDS = [
-    'social_core.backends.vk.VKOAuth2',
+    # Вход через ВКонтакте отключён (оставлен только стандартный бэкенд).
+    # Приложение social_django оставлено в INSTALLED_APPS, чтобы не трогать
+    # существующие таблицы в БД (без миграций и без потери данных).
     'django.contrib.auth.backends.ModelBackend',
 ]
 

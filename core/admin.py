@@ -55,8 +55,8 @@ from django.utils.safestring import mark_safe  # <-- ДОБАВЬ ЭТОТ ИМ�
 class AttendanceInline(admin.TabularInline):
     model = Attendance
     extra = 0
-    fields = ['lesson', 'status', 'was_deducted', 'is_debt']
-    readonly_fields = ['lesson', 'was_deducted', 'is_debt']
+    fields = ['lesson', 'status', 'was_deducted']
+    readonly_fields = ['lesson', 'was_deducted']
     can_delete = False
     max_num = 15
     verbose_name = 'Запись посещаемости'
@@ -340,8 +340,8 @@ class LessonAdmin(admin.ModelAdmin):
 
 @admin.register(Attendance)
 class AttendanceAdmin(admin.ModelAdmin):
-    list_display = ['child', 'lesson', 'status', 'was_deducted', 'is_debt']
-    list_filter = ['status', 'is_debt', 'lesson__date']
+    list_display = ['child', 'lesson', 'status', 'was_deducted']
+    list_filter = ['status', 'lesson__date']
     list_editable = ['status']
     search_fields = ['child__full_name']
     raw_id_fields = ['lesson', 'child']
@@ -365,13 +365,15 @@ class CertificateAdmin(admin.ModelAdmin):
         from .services.certificates import approve_certificate
 
         total_returned = 0
+        processed = 0
         for cert in queryset:
-            cert.status = 'approved'
-            cert.reviewed_at = timezone.now()
-            cert.save()
-            total_returned += approve_certificate(cert)
+            # Статус и баланс меняет сам сервис (идемпотентно,
+            # в транзакции, только реально списанные занятия)
+            returned = approve_certificate(cert)
+            total_returned += returned
+            processed += 1
 
-        msg = f'Одобрено справок: {queryset.count()}.'
+        msg = f'Одобрено справок: {processed}.'
         if total_returned > 0:
             msg += f' Возвращено занятий: {total_returned}.'
         self.message_user(request, msg)
@@ -381,13 +383,13 @@ class CertificateAdmin(admin.ModelAdmin):
         from .services.certificates import reject_certificate
 
         total_deducted = 0
+        processed = 0
         for cert in queryset:
-            cert.status = 'rejected'
-            cert.reviewed_at = timezone.now()
-            cert.save()
-            total_deducted += reject_certificate(cert)
+            deducted = reject_certificate(cert)
+            total_deducted += deducted
+            processed += 1
 
-        msg = f'Отклонено справок: {queryset.count()}.'
+        msg = f'Отклонено справок: {processed}.'
         if total_deducted > 0:
             msg += f' Списано занятий: {total_deducted}.'
         self.message_user(request, msg)
@@ -520,5 +522,6 @@ class PaymentAdmin(admin.ModelAdmin):
         super().save_model(request, obj, form, change)
         
         if is_newly_paid and not obj.event_registration:
-            from core.services.debts import settle_debts_on_payment
-            settle_debts_on_payment(obj)
+            # Логика долгов удалена — просто начисляем занятия на баланс
+            from core.services.debts import credit_lessons_on_payment
+            credit_lessons_on_payment(obj)

@@ -108,9 +108,11 @@
     </p>
     <p class="text-lg font-bold text-blue-900">
         {{ last_payment.amount|floatformat:0 }} ₽
-        {% if last_payment.parent %}
+{% if last_payment.parent %}
     от {{ last_payment.parent.user.get_full_name|default:last_payment.parent.user.username }}
 {% else %}
+    от {{ last_payment.child.full_name }} 👶
+{% endif %}
     от <span class="text-gray-500">—</span>
 {% endif %}
     </p>

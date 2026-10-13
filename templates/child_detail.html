@@ -33,17 +33,6 @@
     </div>
 </div>
 
-{% if debts_count > 0 %}
-<div class="mb-6 bg-orange-50 border border-orange-200 rounded-xl p-4">
-    <h3 class="font-semibold text-orange-800 mb-2">
-        💰 Занятия в долг: {{ debts_count }}
-    </h3>
-    <p class="text-sm text-orange-700">
-        У ребёнка есть неоплаченные посещения.
-        Они будут автоматически погашены при следующей оплате.
-    </p>
-</div>
-{% endif %}
 {# Блок ближайших занятий ребёнка #}
 {% if enrollments_with_prices %}
 <div class="mb-8">

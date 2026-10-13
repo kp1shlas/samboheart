@@ -1,71 +1,147 @@
+from django.db import transaction
+from django.utils import timezone
+
 from core.models import Attendance, Certificate
+
+
+def _covered_by_other_certificate(certificate, lesson_date):
+    """
+    Проверяет, покрывает ли дату другая одобренная справка этого же ребёнка.
+    Нужно, чтобы отклонение одной справки не трогало занятия,
+    возвращённые по другой (пересекающейся) справке.
+    """
+    return Certificate.objects.filter(
+        child=certificate.child,
+        status='approved',
+        date_from__lte=lesson_date,
+        date_to__gte=lesson_date,
+    ).exclude(pk=certificate.pk).exists()
 
 
 def approve_certificate(certificate):
     """
     Вызывается при одобрении справки.
-    Находит занятия в периоде и помечает как «по справке».
+
+    - Занятия «не был» в периоде справки переводятся в «пропуск по справке».
+    - Возвращаются ТОЛЬКО реально списанные занятия (was_deducted=True)
+      — на баланс записи в группу (ChildEnrollment.remaining_lessons).
+    - Отметки «был» не изменяются (не затираем отметку преподавателя).
+    - Идемпотентно: повторный вызов ничего не меняет и возвращает 0.
+
     Возвращает количество возвращённых занятий.
     """
-    child = certificate.child
-    date_from = certificate.date_from
-    date_to = certificate.date_to
-
-    if not date_from or not date_to:
+    if not certificate.date_from or not certificate.date_to:
         return 0
 
-    attendance_records = Attendance.objects.filter(
-        child=child,
-        lesson__date__gte=date_from,
-        lesson__date__lte=date_to,
-    )
+    with transaction.atomic():
+        cert = Certificate.objects.select_for_update().get(pk=certificate.pk)
 
-    returned_lessons = 0
+        # Повторное одобрение не должно менять баланс
+        if cert.status == 'approved':
+            return 0
 
-    for record in attendance_records:
-        if record.status == 'absent':
+        records = (
+            Attendance.objects.select_for_update()
+            .filter(
+                child=cert.child,
+                lesson__date__gte=cert.date_from,
+                lesson__date__lte=cert.date_to,
+            )
+            .select_related('enrollment')
+        )
+
+        returned = 0
+
+        for record in records:
+            if record.status != 'absent':
+                # «Был» не трогаем, «по справке» уже обработаны ранее
+                continue
+
             record.status = 'excused'
-            record.save()
-            child.remaining_lessons += 1
-            returned_lessons += 1
-        elif record.status == 'present':
-            record.status = 'excused'
-            record.save()
 
-    if returned_lessons > 0:
-        child.save()
+            if record.was_deducted:
+                enrollment = record.enrollment
+                if enrollment is not None:
+                    enrollment.remaining_lessons += 1
+                    enrollment.save(update_fields=['remaining_lessons'])
+                    record.was_deducted = False
+                    returned += 1
+                # Если записи в группу нет — вернуть занятие некуда,
+                # просто помечаем по справке
 
-    return returned_lessons
+            record.save(update_fields=['status', 'was_deducted'])
+
+        cert.status = 'approved'
+        cert.reviewed_at = timezone.now()
+        cert.save(update_fields=['status', 'reviewed_at'])
+
+    # Синхронизируем переданный объект, чтобы вьюхи видели новый статус
+    certificate.status = 'approved'
+    certificate.reviewed_at = cert.reviewed_at
+    return returned
 
 
 def reject_certificate(certificate):
     """
     Вызывается при отклонении справки.
-    Возвращает статус «не был» и списывает занятия.
-    """
-    child = certificate.child
-    date_from = certificate.date_from
-    date_to = certificate.date_to
 
-    if not date_from or not date_to:
+    - Занятия «по справке» в периоде возвращаются в статус «не был».
+    - Списание занятия происходит ТОЛЬКО если оно ранее было возвращено
+      справкой (was_deducted=False) и на балансе есть занятия
+      (баланс никогда не уходит в минус).
+    - Даты, покрытые другой одобренной справкой, не трогаются.
+    - Идемпотентно: повторный вызов ничего не меняет и возвращает 0.
+
+    Возвращает количество списанных занятий.
+    """
+    if not certificate.date_from or not certificate.date_to:
         return 0
 
-    attendance_records = Attendance.objects.filter(
-        child=child,
-        lesson__date__gte=date_from,
-        lesson__date__lte=date_to,
-        status='excused',
-    )
+    with transaction.atomic():
+        cert = Certificate.objects.select_for_update().get(pk=certificate.pk)
 
-    deducted_lessons = 0
+        # Повторное отклонение не должно списывать занятия второй раз
+        if cert.status == 'rejected':
+            return 0
 
-    for record in attendance_records:
-        record.status = 'absent'
-        record.save()
-        child.remaining_lessons = max(0, child.remaining_lessons - 1)
-        deducted_lessons += 1
+        records = (
+            Attendance.objects.select_for_update()
+            .filter(
+                child=cert.child,
+                lesson__date__gte=cert.date_from,
+                lesson__date__lte=cert.date_to,
+                status='excused',
+            )
+            .select_related('enrollment')
+        )
 
-    if deducted_lessons > 0:
-        child.save()
+        deducted = 0
 
-    return deducted_lessons
+        for record in records:
+            if _covered_by_other_certificate(cert, record.lesson.date):
+                # Дата принадлежит другой одобренной справке — не трогаем
+                continue
+
+            enrollment = record.enrollment
+            record.status = 'absent'
+
+            if (
+                not record.was_deducted
+                and enrollment is not None
+                and not enrollment.is_free
+                and enrollment.remaining_lessons > 0
+            ):
+                enrollment.remaining_lessons -= 1
+                enrollment.save(update_fields=['remaining_lessons'])
+                record.was_deducted = True
+                deducted += 1
+
+            record.save(update_fields=['status', 'was_deducted'])
+
+        cert.status = 'rejected'
+        cert.reviewed_at = timezone.now()
+        cert.save(update_fields=['status', 'reviewed_at'])
+
+    certificate.status = 'rejected'
+    certificate.reviewed_at = cert.reviewed_at
+    return deducted

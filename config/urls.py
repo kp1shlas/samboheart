@@ -6,7 +6,9 @@ from django.urls import path, include
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('oauth/', include('social_django.urls', namespace='social')),
+    # OAuth (ВКонтакте) отключён — URL убран, чтобы /oauth/... отдавал 404.
+    # Приложение social_django оставлено в INSTALLED_APPS (таблицы в БД
+    # нетронуты, миграции не требуются).
     path('', include('core.urls')),
 ]
 

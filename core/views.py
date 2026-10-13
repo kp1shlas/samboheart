@@ -22,7 +22,8 @@ from .models import (
 )
 from .services.tochka import TochkaPaymentService
 from .services.pricing import calculate_discounted_price
-from .services.debts import settle_debts_on_payment
+from django.db import transaction
+from .services.debts import credit_lessons_on_payment
 from .services.certificates import approve_certificate, reject_certificate
 
 
@@ -82,7 +83,7 @@ def login_view(request):
 
         if not username or not password:
             messages.error(request, 'Заполните логин и пароль.')
-            return render(request, 'login.html', {'vk_enabled': False})
+            return render(request, 'login.html')
 
         user = authenticate(request, username=username, password=password)
         if user:
@@ -95,11 +96,8 @@ def login_view(request):
         else:
             messages.error(request, 'Неверный логин или пароль.')
 
-    # Определяем, включён ли VK
-    from django.conf import settings
-    vk_enabled = bool(getattr(settings, 'SOCIAL_AUTH_VK_OAUTH2_KEY', ''))
-
-    return render(request, 'login.html', {'vk_enabled': vk_enabled})
+    # Вход через ВКонтакте и публичная регистрация отключены
+    return render(request, 'login.html')
 
 
 def register_view(request):
@@ -423,33 +421,11 @@ def child_detail(request, child_id):
         })
 
      
-    today = timezone.now().date()
-    
-    # Проверяем, есть ли у записи посещаемости активная бесплатная скидка
-    free_discount_exists = ChildDiscount.objects.filter(
-        enrollments=OuterRef('enrollment_id'),
-        is_active=True,
-        discount_type='free',
-        valid_from__lte=today,
-        valid_until__gte=today,
-    )
-
-    debts_count = Attendance.objects.filter(
-        child=child, 
-        is_debt=True,
-        enrollment__isnull=False
-    ).annotate(
-        has_free=Exists(free_discount_exists)
-    ).filter(
-        has_free=False # Игнорируем старые долги, если сейчас действует бесплатная скидка
-    ).count()
-
     return render(request, 'child_detail.html', {
         'child': child,
         'enrollments_with_prices': enrollments_with_prices,
         'attendance_records': attendance_records,
         'cancelled_lessons': cancelled_lessons,
-        'debts_count': debts_count,
     })
 
 
@@ -531,33 +507,11 @@ def child_dashboard(request):
         })
 
      
-    today = timezone.now().date()
-    
-    # Проверяем, есть ли у записи посещаемости активная бесплатная скидка
-    free_discount_exists = ChildDiscount.objects.filter(
-        enrollments=OuterRef('enrollment_id'),
-        is_active=True,
-        discount_type='free',
-        valid_from__lte=today,
-        valid_until__gte=today,
-    )
-
-    debts_count = Attendance.objects.filter(
-        child=child, 
-        is_debt=True,
-        enrollment__isnull=False
-    ).annotate(
-        has_free=Exists(free_discount_exists)
-    ).filter(
-        has_free=False # Игнорируем старые долги, если сейчас действует бесплатная скидка
-    ).count()
-
     return render(request, 'child_detail.html', {
         'child': child,
         'enrollments_with_prices': enrollments_with_prices,
         'attendance_records': attendance_records,
         'cancelled_lessons': cancelled_lessons,
-        'debts_count': debts_count,
         'is_child_view': True,
     })
 
@@ -706,17 +660,21 @@ def payment_mock_success(request):
             f'«{registration.event.title}».'
         )
     else:
-        # Оплата за занятия (старая логика)
-        result = settle_debts_on_payment(payment)
-        debts_msg = ''
-        if result['debts_settled'] > 0:
-            debts_msg = f' Погашено занятий в долг: {result["debts_settled"]}.'
-        
-        messages.success(
-            request,
-            f'Оплата {payment.amount} ₽ прошла успешно! '
-            f'Зачислено занятий: {payment.lessons_count}.{debts_msg}'
-        )
+        # Оплата за занятия — просто начисляем занятия на баланс записи
+        result = credit_lessons_on_payment(payment)
+        credited = result['lessons_credited']
+        if credited == 0:
+            messages.warning(
+                request,
+                'Оплата прошла, но не удалось определить запись в группу '
+                'для зачисления занятий. Обратитесь к администратору.'
+            )
+        else:
+            messages.success(
+                request,
+                f'Оплата {payment.amount} ₽ прошла успешно! '
+                f'Зачислено занятий: {credited}.'
+            )
 
     if 'pending_payment_id' in request.session:
         del request.session['pending_payment_id']
@@ -779,17 +737,20 @@ def payment_success(request):
             f'Оплата {payment.amount} ₽ прошла успешно!'
         )
     else:
-        result = settle_debts_on_payment(payment)
-        debts_msg = ''
-
-        if result['debts_settled'] > 0:
-            debts_msg = f' Погашено занятий в долг: {result["debts_settled"]}.'
-
-        messages.success(
-            request,
-            f'Оплата {payment.amount} ₽ прошла успешно! '
-            f'Зачислено занятий: {payment.lessons_count}.{debts_msg}'
-        )
+        result = credit_lessons_on_payment(payment)
+        credited = result['lessons_credited']
+        if credited == 0:
+            messages.warning(
+                request,
+                'Оплата прошла, но не удалось определить запись в группу '
+                'для зачисления занятий. Обратитесь к администратору.'
+            )
+        else:
+            messages.success(
+                request,
+                f'Оплата {payment.amount} ₽ прошла успешно! '
+                f'Зачислено занятий: {credited}.'
+            )
 
     if 'pending_payment_id' in request.session:
         del request.session['pending_payment_id']
@@ -866,15 +827,20 @@ def payment_mock_confirm(request):
             f'«{registration.event.title}».'
         )
     else:
-        result = settle_debts_on_payment(payment)
-        debts_msg = ''
-        if result['debts_settled'] > 0:
-            debts_msg = f' Погашено в долг: {result["debts_settled"]}.'
-        messages.success(
-            request,
-            f'✅ Тестовая оплата {payment.amount} ₽ прошла! '
-            f'Зачислено занятий: {payment.lessons_count}.{debts_msg}'
-        )
+        result = credit_lessons_on_payment(payment)
+        credited = result['lessons_credited']
+        if credited == 0:
+            messages.warning(
+                request,
+                '✅ Тестовая оплата прошла, но запись в группу не найдена. '
+                'Занятия не зачислены.'
+            )
+        else:
+            messages.success(
+                request,
+                f'✅ Тестовая оплата {payment.amount} ₽ прошла! '
+                f'Зачислено занятий: {credited}.'
+            )
 
     if 'pending_payment_id' in request.session:
         del request.session['pending_payment_id']
@@ -1027,57 +993,69 @@ def attendance_sheet_for_lesson(request, lesson_id):
         action = request.POST.get('action')
 
         if action == 'save_attendance':
-            for child in children:
-                status = request.POST.get(
-                    f'status_{child.id}', 'present'
-                )
-                should_deduct = (status == 'absent')
+            with transaction.atomic():
+                for child in children:
+                    status = request.POST.get(
+                        f'status_{child.id}', 'present'
+                    )
+                    if status not in ('present', 'absent'):
+                        status = 'present'
 
-                # Находим запись ребёнка в этой группе
-                enrollment = ChildEnrollment.objects.filter(
-                    child=child, group=lesson.group, is_active=True
-                ).first()
+                    # Находим запись ребёнка в этой группе
+                    enrollment = (
+                        ChildEnrollment.objects.select_for_update()
+                        .filter(child=child, group=lesson.group, is_active=True)
+                        .first()
+                    )
 
-                # Если был с 0 занятий → долг
-                is_debt = False
-                if status == 'present' and enrollment and enrollment.remaining_lessons <= 0:
-                    if not enrollment.is_free:
-                        is_debt = True
+                    attendance = (
+                        Attendance.objects.select_for_update()
+                        .filter(lesson=lesson, child=child)
+                        .select_related('enrollment')
+                        .first()
+                    )
 
-                attendance, created = Attendance.objects.get_or_create(
-                    lesson=lesson,
-                    child=child,
-                    defaults={
-                        'status': status,
-                        'was_deducted': should_deduct,
-                        'is_debt': is_debt,
-                        'enrollment': enrollment,
-                    }
-                )
+                    # 1) Если занятие было списано ранее — возвращаем его.
+                    #    Возвращаем ровно столько, сколько было списано
+                    #    (was_deducted=True), чтобы баланс не «дублировался».
+                    if attendance and attendance.was_deducted:
+                        old_enrollment = attendance.enrollment
+                        if old_enrollment is None and enrollment is not None:
+                            old_enrollment = enrollment
+                        if old_enrollment is not None:
+                            old_enrollment.remaining_lessons += 1
+                            old_enrollment.save(update_fields=['remaining_lessons'])
+                        attendance.was_deducted = False
 
-                if not created:
-                    old_deducted = attendance.was_deducted
-                    attendance.status = status
-                    attendance.was_deducted = should_deduct
-                    attendance.is_debt = is_debt
-                    attendance.enrollment = enrollment
-                    attendance.save()
+                    # 2) Новое списание: только за статус «не был»,
+                    #    только если есть запись в группу и баланс > 0.
+                    #    Баланс НИКОГДА не уходит в минус.
+                    new_deducted = False
+                    if (
+                        status == 'absent'
+                        and enrollment is not None
+                        and not enrollment.is_free
+                        and enrollment.remaining_lessons > 0
+                    ):
+                        enrollment.remaining_lessons -= 1
+                        enrollment.save(update_fields=['remaining_lessons'])
+                        new_deducted = True
 
-                    if enrollment:
-                        if should_deduct and not old_deducted:
-                            enrollment.remaining_lessons = max(
-                                0, enrollment.remaining_lessons - 1
-                            )
-                            enrollment.save()
-                        elif not should_deduct and old_deducted:
-                            enrollment.remaining_lessons += 1
-                            enrollment.save()
-                else:
-                    if enrollment and should_deduct:
-                        enrollment.remaining_lessons = max(
-                            0, enrollment.remaining_lessons - 1
+                    if attendance:
+                        attendance.status = status
+                        attendance.was_deducted = new_deducted
+                        attendance.is_debt = False  # логика долгов удалена
+                        attendance.enrollment = enrollment
+                        attendance.save()
+                    else:
+                        Attendance.objects.create(
+                            lesson=lesson,
+                            child=child,
+                            status=status,
+                            was_deducted=new_deducted,
+                            is_debt=False,
+                            enrollment=enrollment,
                         )
-                        enrollment.save()
 
             messages.success(request, 'Посещаемость сохранена.')
             return redirect('group_lessons', group_id=lesson.group.id)
@@ -1104,11 +1082,20 @@ def attendance_sheet_for_lesson(request, lesson_id):
             messages.success(request, 'Занятие восстановлено.')
             return redirect('group_lessons', group_id=lesson.group.id)
 
+    # Словарь «ребёнок → запись в группу» для отображения остатка занятий
+    enrollment_map = {
+        e.child_id: e
+        for e in ChildEnrollment.objects.filter(
+            group=lesson.group, is_active=True, child__in=children
+        )
+    }
+
     return render(request, 'attendance_sheet.html', {
         'group': lesson.group,
         'children': children,
         'lesson': lesson,
         'existing': existing,
+        'enrollment_map': enrollment_map,
     })
 
 
@@ -1326,16 +1313,21 @@ def owner_cash_payment(request):
             paid_at=timezone.now(),
         )
 
-        result = settle_debts_on_payment(payment)
-        debts_msg = ''
-        if result['debts_settled'] > 0:
-            debts_msg = f' Погашено в долг: {result["debts_settled"]}.'
-
-        messages.success(
-            request,
-            f'Оплата {amount} ₽ ({lessons_count} зан.) '
-            f'за {child.full_name} зафиксирована.{debts_msg}'
-        )
+        result = credit_lessons_on_payment(payment)
+        credited = result['lessons_credited']
+        if credited == 0:
+            messages.warning(
+                request,
+                f'Оплата {amount} ₽ зафиксирована, но запись в группу '
+                f'не найдена — занятия не зачислены.'
+            )
+        else:
+            messages.success(
+                request,
+                f'Оплата {amount} ₽ ({lessons_count} зан.) '
+                f'за {child.full_name} зафиксирована. '
+                f'Зачислено занятий: {credited}.'
+            )
         return redirect('owner_cash_payment')
 
     enrollments = (
@@ -1363,23 +1355,33 @@ def owner_certificates(request):
         certificate = get_object_or_404(Certificate, id=certificate_id)
 
         if action == 'approve':
-            certificate.status = 'approved'
-            certificate.reviewed_at = timezone.now()
-            certificate.save()
+            # Статус выставляет сам сервис — так повторное одобрение
+            # идемпотентно и не влияет на баланс дважды
             returned = approve_certificate(certificate)
-            messages.success(
-                request,
-                f'Справка одобрена. Возвращено занятий: {returned}.'
-            )
+            if returned > 0:
+                messages.success(
+                    request,
+                    f'Справка одобрена. Возвращено занятий: {returned}.'
+                )
+            else:
+                messages.success(
+                    request,
+                    'Справка одобрена. Занятия для возврата не найдены '
+                    '(возможно, справка уже была обработана).'
+                )
         elif action == 'reject':
-            certificate.status = 'rejected'
-            certificate.reviewed_at = timezone.now()
-            certificate.save()
-            rejected = reject_certificate(certificate)
-            messages.success(
-                request,
-                f'Справка отклонена. Списано занятий: {rejected}.'
-            )
+            deducted = reject_certificate(certificate)
+            if deducted > 0:
+                messages.success(
+                    request,
+                    f'Справка отклонена. Списано занятий: {deducted}.'
+                )
+            else:
+                messages.success(
+                    request,
+                    'Справка отклонена. Занятия для списания не найдены '
+                    '(баланс не уменьшается ниже нуля).'
+                )
 
         return redirect('owner_certificates')
 
@@ -1827,10 +1829,12 @@ def tochka_webhook(request):
                     registration.save()
                     logger.info(f"✅ Event registration {registration.id} marked as paid")
                 else:
-                    # Это оплата занятий — погашаем долги и начисляем остаток
-                    from core.services.debts import settle_debts_on_payment
-                    settle_debts_on_payment(payment)
-                    logger.info(f"✅ Debts settled for payment {payment.id}")
+                    # Это оплата занятий — начисляем занятия на баланс записи.
+                    # credit_lessons_on_payment идемпотентен: повторный
+                    # вебхук (webhook + возврат пользователя) не начислит дважды.
+                    from core.services.debts import credit_lessons_on_payment as _credit
+                    _credit(payment)
+                    logger.info(f"✅ Lessons credited for payment {payment.id}")
 
         elif status in ['REJECTED', 'CANCELLED', 'failed', 'cancelled', 'canceled', 'FAILED', 'Failed']:
             if payment.status == 'pending':

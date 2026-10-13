@@ -11,7 +11,9 @@ urlpatterns = [
      path('register/', views.register_view, name='register'),
      path('welcome/', views.welcome_view, name='welcome'),
      path('change-password/', views.change_password, name='change_password'),
-     path('oauth/', include('social_django.urls', namespace='social')),
+     # OAuth (ВКонтакте) отключён — URL убран, чтобы /oauth/... отдавал 404.
+     # Приложение social_django оставлено в INSTALLED_APPS (таблицы в БД
+     # нетронуты, миграции не требуются).
      path('pricing/', views.pricing_view, name='pricing'),
 
     # ─── Дашборды ──────────────────────────────────────
