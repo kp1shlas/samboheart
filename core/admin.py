@@ -90,9 +90,9 @@ class CertificateInline(admin.TabularInline):
 
 @admin.register(Child)
 class ChildAdmin(admin.ModelAdmin):
-    list_display = ['full_name', 'parent', 'birth_date', 'is_active', 'get_last_login_info']
-    list_filter = ['is_active', 'enrollments__group']
-    list_editable = ['is_active']
+    list_display = ['full_name', 'parent', 'birth_date', 'is_active', 'hide_from_debtors', 'get_last_login_info']
+    list_filter = ['is_active', 'hide_from_debtors', 'enrollments__group']
+    list_editable = ['is_active', 'hide_from_debtors']
     search_fields = ['full_name', 'user__username', 'parent__user__username']
     raw_id_fields = ['parent', 'user']
     actions = ['import_from_excel', 'export_to_excel', 'activate_selected', 'deactivate_selected']
@@ -113,7 +113,7 @@ class ChildAdmin(admin.ModelAdmin):
 
     fieldsets = (
         (None, {
-            'fields': ('full_name', 'birth_date', 'parent', 'user', 'is_active')
+            'fields': ('full_name', 'birth_date', 'parent', 'user', 'is_active', 'hide_from_debtors')
         }),
         ('🔐 Безопасность', {
             'fields': (
@@ -294,9 +294,9 @@ class ChildAdmin(admin.ModelAdmin):
     
 @admin.register(ChildEnrollment)
 class ChildEnrollmentAdmin(admin.ModelAdmin):
-    list_display = ['child', 'group', 'remaining_lessons', 'is_active', 'enrolled_at']
-    list_filter = ['group', 'is_active']
-    list_editable = ['remaining_lessons', 'is_active']
+    list_display = ['child', 'group', 'remaining_lessons', 'is_active', 'exclude_from_debtors', 'enrolled_at']
+    list_filter = ['group', 'is_active', 'exclude_from_debtors']
+    list_editable = ['remaining_lessons', 'is_active', 'exclude_from_debtors']
     search_fields = ['child__full_name']
     raw_id_fields = ['child', 'group']
     actions = ['activate_enrollments', 'deactivate_enrollments']

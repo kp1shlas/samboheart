@@ -34,7 +34,20 @@
             </div>
         </div>
 
-        {% if children %}
+        {% if is_child_view %}
+        <form method="post" class="space-y-4">
+            {% csrf_token %}
+            <div class="bg-green-50 border border-green-200 rounded-xl p-4 mb-4">
+                <p class="text-green-800 font-medium">👶 Регистрация от аккаунта ребёнка</p>
+                <p class="text-sm text-green-700 mt-1">{{ child_from_account.full_name }}</p>
+            </div>
+            <button type="submit"
+                    class="w-full bg-primary hover:bg-red-700
+                           text-white font-semibold py-3 rounded-xl transition">
+                Зарегистрироваться
+            </button>
+        </form>
+        {% elif children %}
         <form method="post" class="space-y-4">
             {% csrf_token %}
 

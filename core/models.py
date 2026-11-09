@@ -56,6 +56,11 @@ class Child(models.Model):
     full_name = models.CharField('ФИО', max_length=200)
     birth_date = models.DateField('Дата рождения', null=True, blank=True)
     is_active = models.BooleanField('Активен', default=True)
+    hide_from_debtors = models.BooleanField(
+        'Скрыть из должников',
+        default=False,
+        help_text='Если включено, ребёнок не отображается в списке должников на дашборде владельца'
+    )
 
     def __str__(self):
         return self.full_name
@@ -126,6 +131,7 @@ class ChildEnrollment(models.Model):
     )
     remaining_lessons = models.IntegerField('Остаток занятий', default=0)
     is_active = models.BooleanField('Активна', default=True)
+    exclude_from_debtors = models.BooleanField('Исключить из должников', default=False)
     enrolled_at = models.DateField('Дата записи', auto_now_add=True)
 
     @property
@@ -438,7 +444,8 @@ class EventRegistration(models.Model):
         verbose_name='Ребёнок'
     )
     parent = models.ForeignKey(
-        ParentProfile, on_delete=models.CASCADE,
+        ParentProfile, on_delete=models.SET_NULL,
+        null=True, blank=True,
         related_name='event_registrations',
         verbose_name='Родитель'
     )

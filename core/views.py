@@ -1223,6 +1223,8 @@ def owner_dashboard(request):
             is_active=True,
             remaining_lessons__lte=0,
             child__is_active=True,
+            exclude_from_debtors=False,
+            child__hide_from_debtors=False,
         )
         .annotate(has_free=Exists(free_discount_exists))
         .filter(has_free=False)
@@ -1334,6 +1336,8 @@ def owner_report(request):
             is_active=True,
             remaining_lessons__lte=0,
             child__is_active=True,
+            exclude_from_debtors=False,
+            child__hide_from_debtors=False,
         )
         .annotate(has_free=Exists(free_discount_exists))
         .filter(has_free=False)
@@ -1637,51 +1641,78 @@ def events_list(request):
 
 def event_detail(request, pk):
     event = get_object_or_404(Event, pk=pk, is_published=True)
-    return render(request, 'event_detail.html', {'event': event})
+
+    # Регистрации текущего пользователя (родитель — своих детей, ребёнок — свою)
+    my_registrations = []
+    if request.user.is_authenticated:
+        if hasattr(request.user, 'child_profile'):
+            my_registrations = event.registrations.filter(
+                child=request.user.child_profile
+            ).exclude(status='cancelled')
+        elif hasattr(request.user, 'parent_profile'):
+            my_registrations = event.registrations.filter(
+                parent=request.user.parent_profile
+            ).exclude(status='cancelled')
+
+    # Список участников для всех авторизованных пользователей
+    participants = []
+    if request.user.is_authenticated and event.is_registration_required:
+        participants = event.registrations.filter(
+            status__in=['registered', 'paid', 'attended']
+        ).select_related('child').order_by('registered_at')
+
+    return render(request, 'event_detail.html', {
+        'event': event,
+        'my_registrations': my_registrations,
+        'participants': participants,
+    })
 
 @login_required
 def event_register(request, event_id):
-    """Регистрация на мероприятие"""
+    """Регистрация на мероприятие (родитель или сам ребёнок)"""
     event = get_object_or_404(Event, id=event_id, is_published=True)
     
-    # Проверяем, требуется ли регистрация
     if not event.is_registration_required:
         messages.error(request, 'Для этого события регистрация не требуется.')
         return redirect('event_detail', pk=event.id)
     
-    # Проверяем, открыта ли регистрация
     if not event.is_registration_open:
         messages.error(request, 'Регистрация на это событие закрыта.')
         return redirect('event_detail', pk=event.id)
     
-    # Проверяем лимит мест
     if event.spots_available is not None and event.spots_available <= 0:
         messages.error(request, 'К сожалению, все места заняты.')
         return redirect('event_detail', pk=event.id)
     
-    # Получаем родителя
-    try:
-        parent = request.user.parent_profile
-    except:
-        messages.error(request, 'Только родители могут регистрировать детей.')
-        return redirect('event_detail', pk=event.id)
+    is_child = hasattr(request.user, 'child_profile')
+    parent = None
+    children = None
+    child_from_account = None
     
-    # Получаем детей родителя
-    children = parent.children.filter(is_active=True)
+    if is_child:
+        child_from_account = request.user.child_profile
+        parent = child_from_account.parent
+    else:
+        try:
+            parent = request.user.parent_profile
+        except Exception:
+            messages.error(request, 'Нет доступа к регистрации.')
+            return redirect('event_detail', pk=event.id)
+        children = parent.children.filter(is_active=True)
     
     if request.method == 'POST':
-        child_id = request.POST.get('child_id')
+        if is_child:
+            child = child_from_account
+        else:
+            child_id = request.POST.get('child_id')
+            if not child_id:
+                messages.error(request, 'Выберите ребёнка.')
+                return render(request, 'event_register.html', {
+                    'event': event,
+                    'children': children,
+                })
+            child = get_object_or_404(Child, id=child_id, parent=parent)
         
-        if not child_id:
-            messages.error(request, 'Выберите ребёнка.')
-            return render(request, 'event_register.html', {
-                'event': event,
-                'children': children,
-            })
-        
-        child = get_object_or_404(Child, id=child_id, parent=parent)
-        
-        # Проверяем, не зарегистрирован ли уже
         existing = EventRegistration.objects.filter(
             event=event, child=child
         ).exclude(status='cancelled').first()
@@ -1693,7 +1724,6 @@ def event_register(request, event_id):
             )
             return redirect('event_detail', pk=event.id)
         
-        # Создаём регистрацию
         registration = EventRegistration.objects.create(
             event=event,
             child=child,
@@ -1701,7 +1731,6 @@ def event_register(request, event_id):
             status='registered',
         )
         
-        # Если бесплатно — сразу отмечаем как оплачено
         if event.price == 0:
             registration.status = 'paid'
             registration.paid_at = timezone.now()
@@ -1722,22 +1751,29 @@ def event_register(request, event_id):
     return render(request, 'event_register.html', {
         'event': event,
         'children': children,
+        'is_child_view': is_child,
+        'child_from_account': child_from_account,
     })
 
 
 @login_required
 def event_cancel_registration(request, registration_id):
-    """Отмена регистрации"""
+    """Отмена регистрации (родитель или сам ребёнок)"""
     registration = get_object_or_404(EventRegistration, id=registration_id)
     
-    # Проверяем права
-    try:
-        parent = request.user.parent_profile
-    except:
-        return HttpResponseForbidden()
+    is_child = hasattr(request.user, 'child_profile')
     
-    if registration.parent != parent:
-        return HttpResponseForbidden()
+    if is_child:
+        child_profile = request.user.child_profile
+        if registration.child != child_profile:
+            return HttpResponseForbidden()
+    else:
+        try:
+            parent = request.user.parent_profile
+        except Exception:
+            return HttpResponseForbidden()
+        if registration.parent != parent:
+            return HttpResponseForbidden()
     
     # Отменяем
     registration.status = 'cancelled'
@@ -1753,21 +1789,28 @@ def event_cancel_registration(request, registration_id):
 
 @login_required
 def event_pay(request, registration_id):
-    """Оплата участия в мероприятии"""
+    """Оплата участия в мероприятии (родитель или сам ребёнок)"""
     registration = get_object_or_404(
         EventRegistration,
         id=registration_id,
         status='registered'
     )
     
-    # Проверяем права
-    try:
-        parent = request.user.parent_profile
-    except:
-        return HttpResponseForbidden()
+    is_child = hasattr(request.user, 'child_profile')
+    parent = None
     
-    if registration.parent != parent:
-        return HttpResponseForbidden()
+    if is_child:
+        child_profile = request.user.child_profile
+        if registration.child != child_profile:
+            return HttpResponseForbidden()
+        parent = registration.parent
+    else:
+        try:
+            parent = request.user.parent_profile
+        except Exception:
+            return HttpResponseForbidden()
+        if registration.parent != parent:
+            return HttpResponseForbidden()
     
     event = registration.event
     child = registration.child
@@ -1776,7 +1819,7 @@ def event_pay(request, registration_id):
         messages.info(request, 'Это мероприятие бесплатное.')
         return redirect('event_detail', pk=event.id)
     
-    # Создаём платёж
+    # Создаём платёж (по эталону pay_for_enrollment)
     order_id = str(uuid.uuid4())[:8]
     payment = Payment.objects.create(
         parent=parent,
@@ -1787,6 +1830,8 @@ def event_pay(request, registration_id):
         method='online',
         note=f'Участие в мероприятии: {event.title}',
         event_registration=registration,
+        order_id=order_id,
+        bank_payment_id=order_id,  # временно наш ID
     )
     
     # Создаём платёжную ссылку через Точку
@@ -1805,7 +1850,10 @@ def event_pay(request, registration_id):
         )
         return redirect('event_detail', pk=event.id)
     
-    payment.bank_payment_id = result['payment_id']
+    # Сохраняем UUID от Точки в operation_id и bank_payment_id
+    operation_id = result.get('payment_id', '')
+    payment.operation_id = operation_id
+    payment.bank_payment_id = operation_id or order_id
     payment.save()
     request.session['pending_payment_id'] = payment.id
     
@@ -1886,23 +1934,34 @@ def tochka_webhook(request):
         payment=payment,
     )
 
-    if status in ['APPROVED', 'SUCCESS', 'PAID', 'paid', 'success']:
-        if payment.status != 'paid':
-            payment.status = 'paid'
-            payment.paid_at = timezone.now()
-            payment.save()
+    from django.db import transaction
 
-            if payment.event_registration:
-                payment.event_registration.status = 'paid'
-                payment.event_registration.paid_at = timezone.now()
-                payment.event_registration.save()
-            else:
-                settle_debts_on_payment(payment)
+    if status in ['APPROVED', 'SUCCESS', 'PAID', 'paid', 'success']:
+        # Атомарное обновление: предотвращает двойное списание при повторных webhook
+        with transaction.atomic():
+            updated = Payment.objects.filter(
+                id=payment.id
+            ).exclude(status='paid').update(
+                status='paid',
+                paid_at=timezone.now()
+            )
+            
+            if updated:
+                payment.refresh_from_db()
+                
+                if payment.event_registration:
+                    payment.event_registration.status = 'paid'
+                    payment.event_registration.paid_at = timezone.now()
+                    payment.event_registration.save()
+                else:
+                    settle_debts_on_payment(payment)
 
     elif status in ['REJECTED', 'CANCELLED', 'FAILED', 'failed']:
-        if payment.status == 'pending':
-            payment.status = 'failed'
-            payment.save()
+        # Атомарное обновление для отклонённых платежей
+        Payment.objects.filter(
+            id=payment.id,
+            status='pending'
+        ).update(status='failed')
 
     return JsonResponse({'ok': True})
 
