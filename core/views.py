@@ -1715,21 +1715,29 @@ def event_register(request, event_id):
         
         existing = EventRegistration.objects.filter(
             event=event, child=child
-        ).exclude(status='cancelled').first()
+        ).first()
         
         if existing:
-            messages.warning(
-                request,
-                f'{child.full_name} уже зарегистрирован(а) на это событие.'
+            if existing.status != 'cancelled':
+                messages.warning(
+                    request,
+                    f'{child.full_name} уже зарегистрирован(а) на это событие.'
+                )
+                return redirect('event_detail', pk=event.id)
+            else:
+                existing.status = 'registered'
+                existing.parent = parent
+                existing.paid_at = None
+                existing.notes = ''
+                existing.save()
+                registration = existing
+        else:
+            registration = EventRegistration.objects.create(
+                event=event,
+                child=child,
+                parent=parent,
+                status='registered',
             )
-            return redirect('event_detail', pk=event.id)
-        
-        registration = EventRegistration.objects.create(
-            event=event,
-            child=child,
-            parent=parent,
-            status='registered',
-        )
         
         if event.price == 0:
             registration.status = 'paid'
