@@ -1747,14 +1747,9 @@ def event_register(request, event_id):
                 request,
                 f'{child.full_name} успешно зарегистрирован(а) на {event.title}!'
             )
+            return redirect('event_detail', pk=event.id)
         else:
-            messages.success(
-                request,
-                f'{child.full_name} зарегистрирован(а). '
-                f'Необходимо оплатить участие: {event.price} ₽.'
-            )
-        
-        return redirect('event_detail', pk=event.id)
+            return redirect('event_pay', registration_id=registration.id)
     
     return render(request, 'event_register.html', {
         'event': event,
